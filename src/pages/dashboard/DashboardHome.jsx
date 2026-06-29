@@ -98,6 +98,7 @@ export default function DashboardHome() {
       <div className="kfpl-welcome-banner">
         <div className="kfpl-welcome-content">
           <div className="kfpl-welcome-text">
+            <div className="kfpl-welcome-eyebrow">Agent admin portal</div>
             <h1 className="kfpl-welcome-title">
               Welcome back, <span className="kfpl-welcome-name">Rajesh</span>
             </h1>
@@ -106,13 +107,13 @@ export default function DashboardHome() {
             </p>
           </div>
           <div className="kfpl-welcome-stats">
-            <div className="kfpl-stat-pill kfpl-stat-pill--dark">
-              <span className="kfpl-stat-pill-value" style={{ color: 'var(--color-gold)' }}>{formatNumber(stats.totalClients)}</span>
-              <span className="kfpl-stat-pill-label" style={{ color: 'rgba(255,255,255,0.5)' }}>Total Clients</span>
+            <div className="kfpl-stat-pill">
+              <span className="kfpl-stat-pill-value">{formatNumber(stats.totalClients)}</span>
+              <span className="kfpl-stat-pill-label">Total Clients</span>
             </div>
-            <div className="kfpl-stat-pill kfpl-stat-pill--dark">
-              <span className="kfpl-stat-pill-value" style={{ color: '#4CAF50' }}>{formatNumber(stats.activeInvestments)}</span>
-              <span className="kfpl-stat-pill-label" style={{ color: 'rgba(255,255,255,0.5)' }}>Active Investments</span>
+            <div className="kfpl-stat-pill">
+              <span className="kfpl-stat-pill-value">{formatNumber(stats.activeInvestments)}</span>
+              <span className="kfpl-stat-pill-label">Active Investments</span>
             </div>
           </div>
         </div>
