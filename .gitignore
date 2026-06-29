@@ -17,10 +17,12 @@ dist-ssr
 
 # IDE
 .vscode/*
-!.vscode/extensions.json
-.idea
-*.swp
-*.swo
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # OS
 .DS_Store
