@@ -38,7 +38,100 @@ export default function CommissionOverview() {
   ];
 
   const handleDownload = (format) => {
-    toast(`Commission statement (${format.toUpperCase()}) downloading...`, 'info');
+    if (format === 'xlsx') {
+      const headers = ['Month', 'Investment Base', 'Slab Percent', 'Commission Amount'];
+      const rows = monthlyCommission.map(m => [
+        m.month,
+        m.investmentBase,
+        `${m.slabPercent}%`,
+        m.amount
+      ]);
+      const csvContent = [headers, ...rows]
+        .map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Monthly_Commission_Ledger_${new Date().getFullYear()}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast('Excel/CSV statement downloaded successfully.', 'success');
+    } else if (format === 'pdf') {
+      const printWindow = window.open('', '_blank', 'width=900,height=700');
+      const rowsHtml = monthlyCommission.map(m => `
+        <tr>
+          <td style="border: 1px solid #CFDDD5; padding: 10px; font-weight: 500;">${m.month}</td>
+          <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: right;">₹${m.investmentBase.toLocaleString('en-IN')}</td>
+          <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: center;"><span style="background: #E6F4EA; color: #137333; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${m.slabPercent}%</span></td>
+          <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: right; font-weight: bold; color: #0F766E;">₹${m.amount.toLocaleString('en-IN')}</td>
+        </tr>
+      `).join('');
+      const totalAmount = monthlyCommission.reduce((sum, m) => sum + m.amount, 0);
+
+      printWindow.document.write(`
+        <html>
+        <head>
+          <title>Monthly Commission Ledger</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+            body { font-family: 'Inter', sans-serif; line-height: 1.6; color: #11221A; background-color: #FFFFFF; padding: 40px; margin: 0; }
+            .header { margin-bottom: 30px; border-bottom: 3px solid #0F766E; padding-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 28px; font-weight: 800; color: #061D13; margin: 0; text-transform: uppercase; letter-spacing: -0.5px; }
+            .table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+            .table th { background-color: #E5ECE8; border: 1px solid #CFDDD5; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; font-weight: 800; color: #2E3E36; letter-spacing: 0.5px; }
+            .table td { border: 1px solid #CFDDD5; padding: 10px 12px; color: #11221A; }
+            .total-row { background-color: #F3F7F5; font-weight: bold; }
+            @media print {
+              body { padding: 0; }
+              .print-btn-bar { display: none !important; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-btn-bar" style="display: flex; justify-content: flex-end; margin-bottom: 20px; gap: 10px;">
+            <button onclick="window.print();" style="background: #0F766E; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 13px;">Print / Save PDF</button>
+            <button onclick="window.close();" style="background: #e2ece7; color: #2e3e36; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 13px;">Close Window</button>
+          </div>
+          <div class="header">
+            <div>
+              <div class="title">Monthly Commission Ledger</div>
+              <div style="font-size: 12px; color: #6D7E75; margin-top: 4px; font-weight: 500;">KFPL Agent Commission Statement</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 13px; font-weight: 600; color: #2E3E36;">Date Generated:</div>
+              <div style="font-size: 14px; font-weight: 700; color: #11221A;">${new Date().toLocaleDateString('en-GB')}</div>
+            </div>
+          </div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th style="text-align: right;">Investment Base</th>
+                <th style="text-align: center;">Slab %</th>
+                <th style="text-align: right;">Commission Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              <tr class="total-row">
+                <td style="text-align: left; font-weight: 800; font-size: 14px; padding: 12px;">Total Summary</td>
+                <td colspan="2"></td>
+                <td style="text-align: right; font-weight: 800; color: #0F766E; font-size: 14px; padding: 12px;">₹${totalAmount.toLocaleString('en-IN')}</td>
+              </tr>
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() {
+              setTimeout(function() { window.print(); }, 300);
+            };
+          </script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      toast('PDF statement window opened.', 'success');
+    }
   };
 
   return (

@@ -1186,25 +1186,6 @@
   padding: 18px 20px;
 }
 
-#client-detail-page .kfpl-tabs {
-  margin-bottom: 22px;
-  border: 1px solid var(--color-border-light);
-  box-shadow: var(--shadow-sm);
-}
-
-#client-detail-page .kfpl-tab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  letter-spacing: 0;
-}
-
-#client-detail-page .kfpl-tab svg {
-  width: 16px;
-  height: 16px;
-}
-
 #client-detail-page .kfpl-detail-info-card,
 #client-detail-page .kfpl-table-container {
   border-radius: var(--radius-lg);
