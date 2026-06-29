@@ -1,7 +1,6 @@
 /* ============================================================
    Page: Profile.jsx
-   Description: Agent profile view with request-based profile and nominee
-   updates, plus direct bank account management.
+   Description: Agent profile view with nominee and bank details management.
    ============================================================ */
 
 import { useState } from 'react';
@@ -12,8 +11,7 @@ const profileIcons = {
   user: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
   shield: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
   bank: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>,
-  nominee: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 11c1.66 0 3-1.57 3-3.5S17.66 4 16 4s-3 1.57-3 3.5S14.34 11 16 11z"/><path d="M8 11c1.66 0 3-1.57 3-3.5S9.66 4 8 4 5 5.57 5 7.5 6.34 11 8 11z"/><path d="M2 20c.55-3.1 3.01-5 6-5 1.25 0 2.38.32 3.31.9"/><path d="M22 20c-.55-3.1-3.01-5-6-5-1.25 0-2.38.32-3.31.9"/></svg>,
-  lock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+  nominee: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 11c1.66 0 3-1.57 3-3.5S17.66 4 16 4s-3 1.57-3 3.5S14.34 11 16 11z"/><path d="M8 11c1.66 0 3-1.57 3-3.5S9.66 4 8 4 5 5.57 5 7.5 6.34 11 8 11z"/><path d="M2 20c.55-3.1 3.01-5 6-5 1.25 0 2.38.32 3.31.9"/><path d="M22 20c-.55-3.1-3.01-5-6-5-1.25 0-2.38.32-3.31.9"/></svg>
 };
 
 export default function Profile() {
@@ -24,7 +22,6 @@ export default function Profile() {
     bankAccount: agentProfile.bankAccount,
     ifsc: agentProfile.ifsc,
   });
-  const [showPasswordSection, setShowPasswordSection] = useState(false);
 
   const handleSaveBank = () => {
     setIsBankEditing(false);
@@ -177,38 +174,6 @@ export default function Profile() {
           </div>
         </div>
       </div>
-
-      <div className="kfpl-card kfpl-profile-card kfpl-profile-security-card" style={{ marginTop: 24 }}>
-        <div className="kfpl-card-header">
-          <h3><span className="kfpl-profile-card-icon">{profileIcons.lock}</span>Security</h3>
-          <button className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm" onClick={() => setShowPasswordSection(!showPasswordSection)}>
-            {showPasswordSection ? 'Close' : 'Change Password'}
-          </button>
-        </div>
-        {showPasswordSection && (
-          <div className="kfpl-card-body">
-            <div className="kfpl-form-row" style={{ maxWidth: 600 }}>
-              <div className="kfpl-form-group">
-                <label className="kfpl-form-label">Current Password</label>
-                <input className="kfpl-form-input" type="password" placeholder="Enter current password" />
-              </div>
-              <div className="kfpl-form-group">
-                <label className="kfpl-form-label">New Password</label>
-                <input className="kfpl-form-input" type="password" placeholder="Enter new password" />
-              </div>
-            </div>
-            <div className="kfpl-form-group" style={{ maxWidth: 290 }}>
-              <label className="kfpl-form-label">Confirm New Password</label>
-              <input className="kfpl-form-input" type="password" placeholder="Confirm new password" />
-            </div>
-            <button className="kfpl-btn kfpl-btn--primary" onClick={() => { setShowPasswordSection(false); toast('Password changed successfully!', 'success'); }}>
-              Update Password
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
-
-/* ============ END: Profile.jsx ============ */

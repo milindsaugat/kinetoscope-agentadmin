@@ -17,6 +17,7 @@ const routeTitles = {
   '/withdrawal': 'Withdrawal',
   '/service-requests': 'Service Requests',
   '/support': 'Support',
+  '/settings': 'Settings',
 };
 
 export default function Header({ isCollapsed, onMenuClick }) {

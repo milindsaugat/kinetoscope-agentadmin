@@ -526,105 +526,242 @@
   margin-bottom: 16px;
 }
 
-/* ── Auth Pages ─────────────────────── */
-.kfpl-auth-page {
+/* ── Login Page ─────────────────────── */
+.kfpl-login {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-navy-mid) 60%, var(--color-navy-light) 100%);
+  background: linear-gradient(135deg, var(--color-navy) 0%, #0B3020 50%, #11442F 100%);
   padding: 24px;
   position: relative;
   overflow: hidden;
 }
 
-.kfpl-auth-page::before {
+.kfpl-login::before {
   content: '';
   position: absolute;
-  top: -30%;
-  right: -10%;
   width: 600px;
   height: 600px;
-  border-radius: var(--radius-full);
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.12) 0%, transparent 60%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%);
+  top: -200px;
+  right: -200px;
 }
 
-.kfpl-auth-page::after {
+.kfpl-login::after {
   content: '';
   position: absolute;
-  bottom: -20%;
-  left: -10%;
   width: 400px;
   height: 400px;
-  border-radius: var(--radius-full);
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 60%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 70%);
+  bottom: -100px;
+  left: -100px;
 }
 
-.kfpl-auth-card {
-  background: var(--color-white);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--shadow-modal);
-  padding: 40px;
+.kfpl-login-card {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xl);
+  padding: 40px 36px;
   width: 100%;
   max-width: 420px;
   position: relative;
   z-index: 1;
 }
 
-.kfpl-auth-logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 32px;
-  justify-content: center;
-}
-
-.kfpl-auth-logo-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--color-gold), var(--color-gold-dark));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-}
-
-.kfpl-auth-logo-icon span {
-  font-weight: 800;
-  font-size: 1.2rem;
-  color: var(--color-white);
-}
-
-.kfpl-auth-logo-text {
-  text-align: left;
-}
-
-.kfpl-auth-logo-title {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.kfpl-auth-logo-sub {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.kfpl-auth-heading {
+.kfpl-login-logo {
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: 32px;
 }
 
-.kfpl-auth-heading h1 {
-  font-size: 24px;
-  margin-bottom: 6px;
+.kfpl-login-logo-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--color-gold) 0%, var(--color-gold-dark) 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: var(--color-white);
+  margin-bottom: 16px;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
 }
 
-.kfpl-auth-heading p {
-  font-size: 14px;
-  color: var(--color-text-muted);
+.kfpl-login-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-white);
+  margin-bottom: 4px;
+}
+
+.kfpl-login-subtitle {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 400;
+}
+
+.kfpl-login-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--radius-md);
+  color: #FCA5A5;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin-bottom: 20px;
+}
+
+.kfpl-login-error svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.kfpl-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.kfpl-login-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kfpl-login-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.kfpl-login-input {
+  width: 100%;
+  padding: 11px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--color-white);
+  transition: var(--transition-fast);
+}
+
+.kfpl-login-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.kfpl-login-input:focus {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.kfpl-login-password-wrap {
+  position: relative;
+}
+
+.kfpl-login-password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  transition: var(--transition-fast);
+}
+
+.kfpl-login-password-toggle:hover {
+  color: var(--color-gold);
+}
+
+.kfpl-login-password-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.kfpl-login-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kfpl-login-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+}
+
+.kfpl-login-remember input[type='checkbox'] {
+  accent-color: var(--color-gold);
+  width: 14px;
+  height: 14px;
+}
+
+.kfpl-login-forgot {
+  font-size: 0.8125rem;
+  color: var(--color-gold);
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.kfpl-login-forgot:hover {
+  color: var(--color-gold-dark);
+}
+
+.kfpl-login-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  background: linear-gradient(135deg, var(--color-gold) 0%, var(--color-gold-dark) 100%);
+  color: var(--color-white);
+  border: none;
+}
+
+.kfpl-login-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+  transform: translateY(-1px);
+}
+
+.kfpl-login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.kfpl-login-footer {
+  text-align: center;
+  margin-top: 28px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.4s ease;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease;
 }
 
 /* ── Drawer ─────────────────────── */
@@ -1316,7 +1453,8 @@
   background: linear-gradient(180deg, #FFFFFF 0%, #F8FBFA 100%);
 }
 
-#profile-page .kfpl-profile-card .kfpl-card-header h3 {
+#profile-page .kfpl-profile-card .kfpl-card-header h3,
+#settings-page .kfpl-profile-card .kfpl-card-header h3 {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1326,7 +1464,8 @@
   letter-spacing: 0;
 }
 
-#profile-page .kfpl-profile-card-icon {
+#profile-page .kfpl-profile-card-icon,
+#settings-page .kfpl-profile-card-icon {
   width: 34px;
   height: 34px;
   display: inline-flex;
@@ -1338,12 +1477,14 @@
   flex-shrink: 0;
 }
 
-#profile-page .kfpl-profile-card-icon svg {
+#profile-page .kfpl-profile-card-icon svg,
+#settings-page .kfpl-profile-card-icon svg {
   width: 17px;
   height: 17px;
 }
 
-#profile-page .kfpl-profile-card .kfpl-card-body {
+#profile-page .kfpl-profile-card .kfpl-card-body,
+#settings-page .kfpl-profile-card .kfpl-card-body {
   padding: 8px 20px 18px;
 }
 
@@ -2175,6 +2316,14 @@
   #commission-page .kfpl-commission-total-card > div:last-child {
     justify-content: center;
   }
+}
+
+/* Settings Page Password eye toggle override */
+#settings-page .kfpl-login-password-toggle {
+  color: var(--color-text-muted) !important;
+}
+#settings-page .kfpl-login-password-toggle:hover {
+  color: var(--color-gold) !important;
 }
 
 /* ============ END: pages.css ============ */
