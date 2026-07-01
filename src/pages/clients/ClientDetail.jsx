@@ -4,12 +4,13 @@
    Matches Super Admin's InvestorDetail.jsx structure and aesthetics perfectly
    ============================================================ */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
-import { clientsList, formatCurrency } from '../../data/mockData';
+import { formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
+import { apiRequest } from '../../config/apiHelper';
 
 /* ── helpers for downloading statements ─────────────────────── */
 function downloadClientROISingleCSV(roi, client) {
@@ -370,8 +371,45 @@ export default function ClientDetail() {
   const navigate = useNavigate();
   const addToast = useToast();
   const [activeTab, setActiveTab] = useState('profile');
+  const [rawClient, setRawClient] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const rawClient = clientsList.find(c => c.clientId === id);
+  useEffect(() => {
+    const fetchClient = async () => {
+      try {
+        const response = await apiRequest(`/api/agent/clients/${id}`);
+        const extractClient = (res) => {
+          if (!res) return null;
+          if (res.client) return res.client;
+          if (res.data) {
+            if (res.data.client) return res.data.client;
+            return res.data;
+          }
+          return res;
+        };
+        const clientObj = extractClient(response);
+        setRawClient(clientObj);
+      } catch (err) {
+        console.error('Failed to load client details:', err);
+        addToast('Failed to load client profile', 'error', 'Error');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchClient();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="kfpl-page">
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ width: '40px', height: '40px', border: '4px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>Loading client details...</span>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   if (!rawClient) {
     return (
@@ -390,14 +428,19 @@ export default function ClientDetail() {
 
   // Fallbacks to enrich rawClient to match all Super Admin Investor fields
   const client = {
-    dob: '1987-10-14',
-    address: '42, Residency Road, Near Brigade Junction, Bangalore, Karnataka 560025',
-    kyc: 'Verified',
-    pan: 'ABCDE5678F',
-    bankName: 'HDFC Bank',
-    accountNo: 'XXXX9876',
-    ifsc: 'HDFC0001042',
-    riskProfile: 'Moderate',
+    dob: rawClient.dob || '1987-10-14',
+    address: rawClient.address || '42, Residency Road, Near Brigade Junction, Bangalore, Karnataka 560025',
+    kyc: rawClient.kyc || rawClient.kycStatus || 'Verified',
+    pan: rawClient.pan || rawClient.panNumber || 'ABCDE5678F',
+    bankName: rawClient.bankName || 'HDFC Bank',
+    accountNo: rawClient.accountNo || rawClient.accountNumber || 'XXXX9876',
+    ifsc: rawClient.ifsc || rawClient.ifscCode || 'HDFC0001042',
+    riskProfile: rawClient.riskProfile || 'Moderate',
+    name: rawClient.name || rawClient.fullName || 'Client',
+    clientId: rawClient.clientId || rawClient.id || rawClient._id,
+    roiPercent: rawClient.roiPercent || rawClient.monthlyRoi || 5.0,
+    totalInvestment: rawClient.totalInvestment || rawClient.investmentAmount || 0,
+    dateOfJoining: rawClient.dateOfJoining || rawClient.joinDate || rawClient.createdAt,
     ...rawClient
   };
 
@@ -415,14 +458,14 @@ export default function ClientDetail() {
   };
 
   // Dynamically generate sub-investments from totalInvestment
-  const investments = [
+  const investments = client.investments || [
     { id: 101, segment: 'Film Making', amount: Math.round(client.totalInvestment * 0.6), date: client.dateOfJoining, roi: client.roiPercent, status: 'Active', risk: 'Medium' },
     { id: 102, segment: 'Distribution', amount: Math.round(client.totalInvestment * 0.4), date: client.dateOfJoining, roi: client.roiPercent, status: 'Active', risk: 'Low' },
   ];
 
   // Dynamically generate ROI History
   const monthlyROIVal = Math.round((client.totalInvestment * (client.roiPercent / 12)) / 100);
-  const roiHistory = [
+  const roiHistory = client.roiHistory || [
     { id: 201, month: 'Jan 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-01-31' },
     { id: 202, month: 'Feb 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-02-28' },
     { id: 203, month: 'Mar 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-03-31' },

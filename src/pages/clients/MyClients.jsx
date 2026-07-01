@@ -4,46 +4,78 @@
    Matches Super Admin's InvestorList.jsx exactly in layout and structure
    ============================================================ */
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clientsList, formatCurrency } from '../../data/mockData';
+import { formatCurrency } from '../../data/mockData';
 import DataTable from '../../components/ui/DataTable';
 import Badge from '../../components/ui/Badge';
+import { apiRequest } from '../../config/apiHelper';
 
 export default function MyClients() {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchClients = async () => {
+      try {
+        const response = await apiRequest('/api/agent/clients');
+        const extractClients = (res) => {
+          if (!res) return [];
+          if (Array.isArray(res)) return res;
+          if (res.data) {
+            if (Array.isArray(res.data)) return res.data;
+            if (res.data.clients && Array.isArray(res.data.clients)) return res.data.clients;
+          }
+          if (res.clients && Array.isArray(res.clients)) return res.clients;
+          return [];
+        };
+        const list = extractClients(response);
+        setClients(list);
+      } catch (err) {
+        console.error('Failed to load clients:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchClients();
+  }, []);
 
   // Filter clients based on statusFilter and tierFilter
   const filteredClients = useMemo(() => {
-    return clientsList.filter(c => {
+    return clients.filter(c => {
+      const status = c.status || 'Active';
+      const investment = c.totalInvestment || c.investmentAmount || 0;
       if (statusFilter !== 'all') {
-        if (c.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+        if (status.toLowerCase() !== statusFilter.toLowerCase()) return false;
       }
       if (tierFilter !== 'all') {
         let tier = 'silver';
-        if (c.totalInvestment >= 5000000) tier = 'diamond';
-        else if (c.totalInvestment >= 3000000) tier = 'platinum';
-        else if (c.totalInvestment >= 1500000) tier = 'gold';
+        if (investment >= 5000000) tier = 'diamond';
+        else if (investment >= 3000000) tier = 'platinum';
+        else if (investment >= 1500000) tier = 'gold';
         
         if (tier !== tierFilter) return false;
       }
       return true;
     });
-  }, [statusFilter, tierFilter]);
+  }, [clients, statusFilter, tierFilter]);
 
   const columns = [
     { 
       header: 'Client ID', 
       accessor: 'clientId',
-      render: (row) => <span>{row.clientId}</span>
+      render: (row) => <span>{row.clientId || row.id || row._id}</span>
     },
     { 
       header: 'Join Date', 
       accessor: 'dateOfJoining',
       render: (row) => {
-        const date = new Date(row.dateOfJoining);
+        const joinDate = row.dateOfJoining || row.joinDate || row.createdAt;
+        if (!joinDate) return <span>—</span>;
+        const date = new Date(joinDate);
         const day = String(date.getDate()).padStart(2, '0');
         const mon = String(date.getMonth() + 1).padStart(2, '0');
         return <span>{`${day}/${mon}/${date.getFullYear()}`}</span>;
@@ -52,7 +84,9 @@ export default function MyClients() {
     {
       header: 'Contract End',
       render: (row) => {
-        const d = new Date(row.dateOfJoining);
+        const joinDate = row.dateOfJoining || row.joinDate || row.createdAt;
+        if (!joinDate) return <span>—</span>;
+        const d = new Date(joinDate);
         const months = parseInt(row.contractPeriod) || 24;
         d.setMonth(d.getMonth() + months);
         const day = String(d.getDate()).padStart(2, '0');
@@ -63,41 +97,54 @@ export default function MyClients() {
     {
       header: 'Client Name',
       accessor: 'name',
-      render: (row) => <span style={{ fontWeight: 600 }}>{row.name}</span>
+      render: (row) => <span style={{ fontWeight: 600 }}>{row.name || row.fullName}</span>
     },
     { header: 'Email Address', accessor: 'email' },
     {
       header: 'Total Investment',
       accessor: 'totalInvestment',
-      render: (row) => <span className="font-semibold">{formatCurrency(row.totalInvestment)}</span>
+      render: (row) => <span className="font-semibold">{formatCurrency(row.totalInvestment || row.investmentAmount || 0)}</span>
     },
     {
       header: 'Monthly ROI % Allocated',
       accessor: 'roiPercent',
-      render: (row) => `${row.roiPercent}%`
+      render: (row) => `${row.roiPercent || row.monthlyRoi || 0}%`
     },
     {
       header: 'Perks',
       accessor: 'totalInvestment',
       render: (row) => {
+        const totalInvestment = row.totalInvestment || row.investmentAmount || 0;
         let tier = 'silver';
-        if (row.totalInvestment >= 5000000) tier = 'diamond';
-        else if (row.totalInvestment >= 3000000) tier = 'platinum';
-        else if (row.totalInvestment >= 1500000) tier = 'gold';
+        if (totalInvestment >= 5000000) tier = 'diamond';
+        else if (totalInvestment >= 3000000) tier = 'platinum';
+        else if (totalInvestment >= 1500000) tier = 'gold';
         return <Badge status={tier}>{tier.toUpperCase()}</Badge>;
       }
     },
     {
       header: 'Commission Earned',
       accessor: 'commissionPaid',
-      render: (row) => <span className="font-semibold" style={{ color: 'var(--color-success)' }}>{formatCurrency(row.commissionPaid)}</span>
+      render: (row) => <span className="font-semibold" style={{ color: 'var(--color-success)' }}>{formatCurrency(row.commissionPaid || 0)}</span>
     },
     {
       header: 'Status',
       accessor: 'status',
-      render: (row) => <Badge status={row.status === 'Active' ? 'active' : 'inactive'}>{row.status}</Badge>
+      render: (row) => <Badge status={(row.status || 'Active').toLowerCase() === 'active' ? 'active' : 'inactive'}>{row.status || 'Active'}</Badge>
     }
   ];
+
+  if (loading) {
+    return (
+      <div className="kfpl-page">
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ width: '40px', height: '40px', border: '4px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>Loading clients...</span>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="kfpl-page" id="my-clients-page">
@@ -148,8 +195,9 @@ export default function MyClients() {
         columns={columns}
         data={filteredClients}
         onRowClick={(row) => {
-          console.log('MyClients: Row click received. Navigating to:', `/clients/${row.clientId}`);
-          navigate(`/clients/${row.clientId}`);
+          const pathId = row.id || row._id || row.clientId;
+          console.log('MyClients: Row click received. Navigating to:', `/clients/${pathId}`);
+          navigate(`/clients/${pathId}`);
         }}
         searchPlaceholder="Search clients by name, email, ID..."
       />

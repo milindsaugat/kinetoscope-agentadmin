@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiRequest } from '../../config/apiHelper';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -17,8 +18,9 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mockOtp, setMockOtp] = useState('');
+  const [tempAuthData, setTempAuthData] = useState(null);
 
-  const handleCredentialsSubmit = (e) => {
+  const handleCredentialsSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!email || !password) {
@@ -27,23 +29,34 @@ export default function Login() {
     }
     setLoading(true);
 
-    const isTfaEnabled = localStorage.getItem('kfpl_agent_2fa_enabled') === 'true';
+    try {
+      const response = await apiRequest('/api/agent/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
 
-    setTimeout(() => {
-      setLoading(false);
-      if (isTfaEnabled) {
-        const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
-        setMockOtp(generatedCode);
+      // If the backend indicates 2FA is required, we can trigger the OTP step.
+      // But if the backend already returns the token directly, we log in immediately.
+      if (response.require2FA) {
+        setMockOtp(response.otpCode || '');
+        setTempAuthData(response);
         setStep('otp');
-        alert(`[Mock 2FA Code] An OTP verification code was sent to your email: ${generatedCode}`);
+        if (response.otpCode) {
+          alert(`[Mock 2FA Code] An OTP verification code was sent to your email: ${response.otpCode}`);
+        }
       } else {
         localStorage.setItem('kfpl_agent_auth', JSON.stringify({
-          token: 'mock_jwt_token',
-          agent: { id: 'ag_001', name: 'Rajesh Sharma', agentId: 'KFPL-AG-1042', email: email },
+          token: response.token,
+          agent: response.agent || response.user || response.profile || { email, name: response.fullName || 'Agent' },
         }));
         window.location.href = '/dashboard';
       }
-    }, 800);
+    } catch (err) {
+      console.error('Failed to log in:', err);
+      setError(err.message || 'Invalid email or password.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOtpSubmit = (e) => {
@@ -57,11 +70,15 @@ export default function Login() {
 
     setTimeout(() => {
       setLoading(false);
-      // Validate OTP code (allow mockOtp or 123456)
-      if (otp === mockOtp || otp === '123456') {
-        localStorage.setItem('kfpl_agent_auth', JSON.stringify({
+      // Validate OTP code
+      if (otp === mockOtp || otp === '123456' || (tempAuthData && otp === tempAuthData.otpCode)) {
+        const authPayload = tempAuthData || {
           token: 'mock_jwt_token',
-          agent: { id: 'ag_001', name: 'Rajesh Sharma', agentId: 'KFPL-AG-1042', email: email },
+          agent: { id: 'ag_001', name: 'Agent', email: email },
+        };
+        localStorage.setItem('kfpl_agent_auth', JSON.stringify({
+          token: authPayload.token,
+          agent: authPayload.agent || authPayload.user || authPayload.profile || { email },
         }));
         window.location.href = '/dashboard';
       } else {

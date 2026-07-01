@@ -4,14 +4,11 @@
    PRD Section 6: OC/MC/SC features
    ============================================================ */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import {
-  oneTimeCommission, oneTimeSlabs, monthlyCommission, monthlySlabs,
-  monthlyChartData, specialCommission, dashboardStats,
-  formatCurrency,
-} from '../../data/mockData';
+import { formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
+import { apiRequest } from '../../config/apiHelper';
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload?.length) {
@@ -28,9 +25,31 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function CommissionOverview() {
   const [activeTab, setActiveTab] = useState('one-time');
   const toast = useToast();
-  const totalOneTime = oneTimeCommission.reduce((s, c) => s + c.commissionEarned, 0);
-  const totalMonthly = monthlyCommission.reduce((s, c) => s + c.amount, 0);
-  const totalSpecial = specialCommission.filter(s => s.status === 'Credited').reduce((s, c) => s + c.amount, 0);
+  const [commissions, setCommissions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCommissions = async () => {
+      try {
+        const response = await apiRequest('/api/agent/commissions');
+        const list = Array.isArray(response) ? response : (response.commissions || response.history || []);
+        setCommissions(list);
+      } catch (err) {
+        console.error('Failed to load commissions:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCommissions();
+  }, []);
+
+  const oneTimeCommission = commissions.filter(c => c.type === 'one-time');
+  const monthlyCommission = commissions.filter(c => c.type === 'monthly' || c.type === 'recurring');
+  const specialCommission = commissions.filter(c => c.type === 'special' || c.type === 'bonus');
+
+  const totalOneTime = oneTimeCommission.reduce((s, c) => s + (c.amount || c.commissionEarned || 0), 0);
+  const totalMonthly = monthlyCommission.reduce((s, c) => s + (c.amount || 0), 0);
+  const totalSpecial = specialCommission.filter(s => s.status === 'Credited' || s.status === 'credited' || s.status === 'paid').reduce((s, c) => s + (c.amount || 0), 0);
   const commissionBreakdown = [
     { label: 'One-Time', value: totalOneTime, helper: `${oneTimeCommission.length} clients` },
     { label: 'Monthly', value: totalMonthly, helper: 'Recurring payouts' },

@@ -5,6 +5,7 @@
    Rewards Status Widget
    ============================================================ */
 
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   dashboardStats, activityFeed, rewardsList, monthlyChartData,
@@ -14,6 +15,7 @@ import KpiCard from '../../components/ui/KpiCard';
 import Badge from '../../components/ui/Badge';
 import DonutChart from '../../components/charts/DonutChart';
 import LineChart from '../../components/charts/LineChart';
+import { apiRequest } from '../../config/apiHelper';
 
 // ── Activity Icons ───────────────────────
 const activityIcons = {
@@ -46,7 +48,42 @@ export default function DashboardHome() {
   const navigate = useNavigate();
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const stats = dashboardStats;
+  
+  const [stats, setStats] = useState(dashboardStats);
+  const [loading, setLoading] = useState(true);
+  const [agentName, setAgentName] = useState('Agent');
+
+  useEffect(() => {
+    const authData = localStorage.getItem('kfpl_agent_auth');
+    if (authData) {
+      try {
+        const parsed = JSON.parse(authData);
+        const rawName = parsed.agent?.name || parsed.agent?.fullName || 'Agent';
+        setAgentName(rawName.split(' ')[0]);
+      } catch (e) {
+        console.error('Failed to parse agent auth:', e);
+      }
+    }
+
+    const fetchStats = async () => {
+      try {
+        const response = await apiRequest('/api/agent/dashboard');
+        setStats({
+          totalClients: response.totalClients ?? dashboardStats.totalClients,
+          activeInvestments: response.activeInvestments ?? dashboardStats.activeInvestments,
+          thisMonthCommission: response.thisMonthCommission ?? response.monthlyCommission ?? dashboardStats.thisMonthCommission,
+          commissionPaid: response.commissionPaid ?? dashboardStats.commissionPaid,
+          commissionPending: response.commissionPending ?? dashboardStats.commissionPending,
+          rewardsEarned: response.rewardsEarned ?? dashboardStats.rewardsEarned,
+        });
+      } catch (err) {
+        console.error('Failed to load dashboard metrics:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, []);
 
   // 1. Calculate Client Investment Distribution (Donut Chart 1)
   const totalClientInvestment = clientsList.reduce((sum, c) => sum + c.totalInvestment, 0);
@@ -100,7 +137,7 @@ export default function DashboardHome() {
           <div className="kfpl-welcome-text">
             <div className="kfpl-welcome-eyebrow">Agent admin portal</div>
             <h1 className="kfpl-welcome-title">
-              Welcome back, <span className="kfpl-welcome-name">Rajesh</span>
+              Welcome back, <span className="kfpl-welcome-name">{agentName}</span>
             </h1>
             <p className="kfpl-welcome-subtitle">
               {dateStr} — Your commission overview at a glance.

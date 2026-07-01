@@ -3,9 +3,10 @@
    Description: Agent profile view with nominee and bank details management.
    ============================================================ */
 
-import { useState } from 'react';
-import { agentProfile, dashboardStats, formatCurrency } from '../../data/mockData';
+import { useState, useEffect } from 'react';
+import { dashboardStats, formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
+import { apiRequest } from '../../config/apiHelper';
 
 const profileIcons = {
   user: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
@@ -16,17 +17,79 @@ const profileIcons = {
 
 export default function Profile() {
   const toast = useToast();
-  const [isBankEditing, setIsBankEditing] = useState(false);
-  const [bankData, setBankData] = useState({
-    bankName: agentProfile.bankName,
-    bankAccount: agentProfile.bankAccount,
-    ifsc: agentProfile.ifsc,
-  });
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const handleSaveBank = () => {
-    setIsBankEditing(false);
-    toast('Bank account details updated successfully.', 'success');
-  };
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const response = await apiRequest('/api/agent/profile');
+        const extractProfile = (res) => {
+          if (!res) return null;
+          if (res.profile) return res.profile;
+          if (res.agent) return res.agent;
+          if (res.data) {
+            if (res.data.profile) return res.data.profile;
+            if (res.data.agent) return res.data.agent;
+            return res.data;
+          }
+          return res;
+        };
+        const rawProfile = extractProfile(response);
+        setProfile(rawProfile);
+      } catch (err) {
+        console.error('Failed to load profile:', err);
+        toast('Failed to load agent profile', 'error', 'Error');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="kfpl-page">
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ width: '40px', height: '40px', border: '4px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>Loading profile...</span>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="kfpl-page">
+        <div className="kfpl-empty-state">
+          <div className="kfpl-empty-state-title">Profile not found</div>
+          <p>Failed to load your profile details from the server.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const name = profile.name || profile.fullName || 'Agent';
+  const email = profile.email || '';
+  const phone = profile.phone || '';
+  const address = profile.address || 'India';
+  const agentId = profile.agentId || '—';
+  const status = profile.status || 'active';
+  const kycStatus = (profile.kycStatus || profile.kyc || 'PENDING').toUpperCase();
+  const joinDate = profile.joiningDate || profile.joinDate || profile.createdAt;
+  const memberSince = joinDate
+    ? new Date(joinDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })
+    : '—';
+
+  const bankName = profile.bankName || '—';
+  const bankAccount = profile.bankAccount || profile.accountNumber || '—';
+  const ifsc = profile.ifsc || profile.ifscCode || '—';
+
+  const nomineeName = profile.nomineeName || profile.nominee?.name || '—';
+  const nomineeRelation = profile.nomineeRelation || profile.nominee?.relation || '—';
+  const nomineeContact = profile.nomineePhone || profile.nominee?.contact || '—';
+  const nomineeEmail = profile.nomineeEmail || profile.nominee?.email || 'Not provided';
 
   return (
     <div className="kfpl-page" id="profile-page">
@@ -34,21 +97,22 @@ export default function Profile() {
         <div className="kfpl-page-header-left">
           <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>My Profile</h2>
           <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: 0 }}>
-            Profile aur nominee changes request approval ke through update honge.
+            Profile details. Nominee changes request approval ke through update honge.
           </p>
         </div>
       </div>
 
       <div className="kfpl-profile-hero">
         <div className="kfpl-profile-avatar-lg">
-          {agentProfile.name.charAt(0)}
+          {name.charAt(0)}
         </div>
         <div className="kfpl-profile-hero-info">
           <div className="kfpl-profile-eyebrow">Agent account</div>
-          <h2>{agentProfile.name}</h2>
-          <div className="kfpl-profile-hero-id">{agentProfile.agentId}</div>
-          <div className="kfpl-profile-hero-status">
-            <span className="kfpl-badge kfpl-badge--success">{agentProfile.status}</span>
+          <h2>{name}</h2>
+          <div className="kfpl-profile-hero-id">{agentId}</div>
+          <div className="kfpl-profile-hero-status" style={{ display: 'flex', gap: '8px' }}>
+            <span className={`kfpl-badge kfpl-badge--${status.toLowerCase() === 'active' ? 'success' : 'warning'}`}>{status}</span>
+            <span className={`kfpl-badge kfpl-badge--${kycStatus === 'VERIFIED' ? 'success' : kycStatus === 'REJECTED' ? 'rejected' : 'warning'}`}>KYC: {kycStatus}</span>
           </div>
         </div>
         <div className="kfpl-profile-hero-stats">
@@ -71,19 +135,19 @@ export default function Profile() {
           <div className="kfpl-card-body">
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Full Name</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.name}</span>
+              <span className="kfpl-profile-detail-value">{name}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Email</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.email}</span>
+              <span className="kfpl-profile-detail-value">{email}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Phone</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.phone}</span>
+              <span className="kfpl-profile-detail-value">{phone}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Address</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.address}</span>
+              <span className="kfpl-profile-detail-value">{address}</span>
             </div>
           </div>
         </div>
@@ -95,15 +159,19 @@ export default function Profile() {
           <div className="kfpl-card-body">
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Agent ID</span>
-              <span className="kfpl-profile-detail-value kfpl-mono">{agentProfile.agentId}</span>
+              <span className="kfpl-profile-detail-value kfpl-mono">{agentId}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Account Status</span>
-              <span className="kfpl-badge kfpl-badge--success">{agentProfile.status}</span>
+              <span className={`kfpl-badge kfpl-badge--${status.toLowerCase() === 'active' ? 'success' : 'warning'}`}>{status}</span>
+            </div>
+            <div className="kfpl-profile-detail-row">
+              <span className="kfpl-profile-detail-label">KYC Status</span>
+              <span className={`kfpl-badge kfpl-badge--${kycStatus === 'VERIFIED' ? 'success' : kycStatus === 'REJECTED' ? 'rejected' : 'warning'}`}>{kycStatus}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Member Since</span>
-              <span className="kfpl-profile-detail-value">{new Date(agentProfile.joiningDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+              <span className="kfpl-profile-detail-value">{memberSince}</span>
             </div>
           </div>
         </div>
@@ -111,41 +179,19 @@ export default function Profile() {
         <div className="kfpl-card kfpl-profile-card">
           <div className="kfpl-card-header">
             <h3><span className="kfpl-profile-card-icon">{profileIcons.bank}</span>Bank Details</h3>
-            {!isBankEditing ? (
-              <button className="kfpl-btn kfpl-btn--primary kfpl-btn--sm" onClick={() => setIsBankEditing(true)}>
-                Add / Update
-              </button>
-            ) : (
-              <div className="kfpl-profile-action-group">
-                <button className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm" onClick={() => setIsBankEditing(false)}>Cancel</button>
-                <button className="kfpl-btn kfpl-btn--primary kfpl-btn--sm" onClick={handleSaveBank}>Save</button>
-              </div>
-            )}
           </div>
           <div className="kfpl-card-body">
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Bank Name</span>
-              {isBankEditing ? (
-                <input className="kfpl-form-input" value={bankData.bankName} onChange={e => setBankData({ ...bankData, bankName: e.target.value })} />
-              ) : (
-                <span className="kfpl-profile-detail-value">{bankData.bankName}</span>
-              )}
+              <span className="kfpl-profile-detail-value">{bankName}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Account Number</span>
-              {isBankEditing ? (
-                <input className="kfpl-form-input" value={bankData.bankAccount} onChange={e => setBankData({ ...bankData, bankAccount: e.target.value })} />
-              ) : (
-                <span className="kfpl-profile-detail-value kfpl-mono">{bankData.bankAccount}</span>
-              )}
+              <span className="kfpl-profile-detail-value kfpl-mono">{bankAccount}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">IFSC Code</span>
-              {isBankEditing ? (
-                <input className="kfpl-form-input" value={bankData.ifsc} onChange={e => setBankData({ ...bankData, ifsc: e.target.value })} />
-              ) : (
-                <span className="kfpl-profile-detail-value kfpl-mono">{bankData.ifsc}</span>
-              )}
+              <span className="kfpl-profile-detail-value kfpl-mono">{ifsc}</span>
             </div>
           </div>
         </div>
@@ -157,19 +203,19 @@ export default function Profile() {
           <div className="kfpl-card-body">
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Name</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.nominee.name}</span>
+              <span className="kfpl-profile-detail-value">{nomineeName}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Relation</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.nominee.relation}</span>
+              <span className="kfpl-profile-detail-value">{nomineeRelation}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Contact</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.nominee.contact}</span>
+              <span className="kfpl-profile-detail-value">{nomineeContact}</span>
             </div>
             <div className="kfpl-profile-detail-row">
               <span className="kfpl-profile-detail-label">Email</span>
-              <span className="kfpl-profile-detail-value">{agentProfile.nominee.email || 'Not provided'}</span>
+              <span className="kfpl-profile-detail-value">{nomineeEmail}</span>
             </div>
           </div>
         </div>
