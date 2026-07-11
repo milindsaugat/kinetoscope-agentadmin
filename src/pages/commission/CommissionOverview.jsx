@@ -49,7 +49,7 @@ export default function CommissionOverview() {
       setLoading(true);
       try {
         const response = await apiRequest('/api/agent/commissions');
-        const list = Array.isArray(response) ? response : (response.commissions || response.history || []);
+        const list = Array.isArray(response) ? response : (response.data?.commissions || response.commissions || response.history || (Array.isArray(response.data) ? response.data : []));
         setCommissions(list);
       } catch (err) {
         console.error('Failed to load commissions:', err);
@@ -61,9 +61,18 @@ export default function CommissionOverview() {
     fetchCommissions();
   }, []);
 
-  const oneTimeCommission = commissions.filter(c => c.type === 'one-time');
-  const monthlyCommission = commissions.filter(c => c.type === 'monthly' || c.type === 'recurring');
-  const specialCommission = commissions.filter(c => c.type === 'special' || c.type === 'bonus');
+  const normalizeType = (t) => {
+    if (!t) return '';
+    const lower = t.toLowerCase().trim();
+    if (lower === 'one time' || lower === 'one-time' || lower === 'onetime') return 'one-time';
+    if (lower === 'monthly' || lower === 'recurring') return 'monthly';
+    if (lower === 'special' || lower === 'bonus' || lower === 'override') return 'special';
+    return lower;
+  };
+
+  const oneTimeCommission = commissions.filter(c => normalizeType(c.type) === 'one-time');
+  const monthlyCommission = commissions.filter(c => normalizeType(c.type) === 'monthly');
+  const specialCommission = commissions.filter(c => normalizeType(c.type) === 'special');
 
   const totalOneTime = oneTimeCommission.reduce((s, c) => s + (c.amount || c.commissionEarned || 0), 0);
   const totalMonthly = monthlyCommission.reduce((s, c) => s + (c.amount || 0), 0);
@@ -217,30 +226,32 @@ export default function CommissionOverview() {
               <span className="kfpl-badge kfpl-badge--emerald">{oneTimeCommission.length} records</span>
             </div>
             <div className="kfpl-table-wrapper">
-              <table className="kfpl-table">
-                <thead>
-                  <tr>
-                    <th>Client Name</th>
-                    <th>Client ID</th>
-                    <th>Investment Amount</th>
-                    <th>Slab %</th>
-                    <th>Commission Earned</th>
-                    <th>Date Credited</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {oneTimeCommission.map((c, i) => (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{c.clientName}</td>
-                      <td className="cell-mono">{c.clientId}</td>
-                      <td className="cell-amount">{formatCurrency(c.investmentAmount)}</td>
-                      <td><span className="kfpl-badge kfpl-badge--emerald">{c.slabPercent}%</span></td>
-                      <td className="cell-amount cell-amount--positive">{formatCurrency(c.commissionEarned)}</td>
-                      <td>{formatDateSafe(c.dateCredited || c.dateOfJoining || c.date)}</td>
+              <div className="kfpl-table-scroll">
+                <table className="kfpl-table">
+                  <thead>
+                    <tr>
+                      <th>Client Name</th>
+                      <th>Client ID</th>
+                      <th>Investment Amount</th>
+                      <th>Slab %</th>
+                      <th>Commission Earned</th>
+                      <th>Date Credited</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {oneTimeCommission.map((c, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{c.clientName}</td>
+                        <td className="cell-mono">{c.clientCode || c.clientId || '—'}</td>
+                        <td className="cell-amount">{formatCurrency(c.investmentAmount)}</td>
+                        <td><span className="kfpl-badge kfpl-badge--emerald">{c.slabPercentage || (c.slabPercent ? `${c.slabPercent}%` : '—')}</span></td>
+                        <td className="cell-amount cell-amount--positive">{formatCurrency(c.amount !== undefined ? c.amount : c.commissionEarned)}</td>
+                        <td>{formatDateSafe(c.date || c.dateCredited || c.dateOfJoining)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -313,21 +324,23 @@ export default function CommissionOverview() {
               <span className="kfpl-badge kfpl-badge--info">{monthlyCommission.length} months</span>
             </div>
             <div className="kfpl-table-wrapper">
-              <table className="kfpl-table">
-                <thead>
-                  <tr><th>Month</th><th>Investment Base</th><th>Slab %</th><th>Commission Amount</th></tr>
-                </thead>
-                <tbody>
-                  {monthlyCommission.map((m, i) => (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{m.month}</td>
-                      <td className="cell-amount">{formatCurrency(m.investmentBase)}</td>
-                      <td><span className="kfpl-badge kfpl-badge--emerald">{m.slabPercent}%</span></td>
-                      <td className="cell-amount cell-amount--positive">{formatCurrency(m.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="kfpl-table-scroll">
+                <table className="kfpl-table">
+                  <thead>
+                    <tr><th>Month</th><th>Investment Base</th><th>Slab %</th><th>Commission Amount</th></tr>
+                  </thead>
+                  <tbody>
+                    {monthlyCommission.map((m, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{m.period || m.month}</td>
+                        <td className="cell-amount">{formatCurrency(m.investmentAmount !== undefined ? m.investmentAmount : m.investmentBase)}</td>
+                        <td><span className="kfpl-badge kfpl-badge--emerald">{m.slabPercentage || (m.slabPercent ? `${m.slabPercent}%` : '—')}</span></td>
+                        <td className="cell-amount cell-amount--positive">{formatCurrency(m.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -362,19 +375,29 @@ export default function CommissionOverview() {
             <span className="kfpl-badge kfpl-badge--warning">{specialCommission.length} entries</span>
           </div>
           <div className="kfpl-table-wrapper">
-            <table className="kfpl-table">
-              <thead><tr><th>Date</th><th>Reason</th><th>Amount</th><th>Status</th></tr></thead>
-              <tbody>
-                {specialCommission.map(s => (
-                  <tr key={s.id}>
-                    <td>{formatDateSafe(s.date)}</td>
-                    <td style={{ fontWeight: 500 }}>{s.reason}</td>
-                    <td className="cell-amount cell-amount--positive">{formatCurrency(s.amount)}</td>
-                    <td><span className={`kfpl-badge ${s.status === 'Credited' ? 'kfpl-badge--success' : 'kfpl-badge--warning'}`}>{s.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="kfpl-table-scroll">
+              <table className="kfpl-table">
+                <thead><tr><th>Date</th><th>Reason</th><th>Amount</th><th>Status</th></tr></thead>
+                <tbody>
+                  {specialCommission.map((s, i) => (
+                    <tr key={s._id || s.id || i}>
+                      <td>{formatDateSafe(s.date)}</td>
+                      <td style={{ fontWeight: 500 }}>{s.remarks || s.reason || '—'}</td>
+                      <td className="cell-amount cell-amount--positive">{formatCurrency(s.amount)}</td>
+                      <td>
+                        <span className={`kfpl-badge ${
+                          ['credited', 'paid', 'success'].includes(String(s.status).toLowerCase()) 
+                            ? 'kfpl-badge--emerald' 
+                            : 'kfpl-badge--gold'
+                        }`}>
+                          {s.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
