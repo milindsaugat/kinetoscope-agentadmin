@@ -43,6 +43,9 @@ import Support from './pages/support/Support';
 // ── Settings ───────────────────────
 import Settings from './pages/settings/Settings';
 
+// ── FAQ ───────────────────────
+import FAQPage from './pages/faq/FAQPage';
+
 // ── Protected Route Wrapper ───────────────────────
 function ProtectedRoute({ children }) {
   const auth = localStorage.getItem('kfpl_agent_auth');
@@ -80,6 +83,7 @@ export default function App() {
             <Route path="service-requests" element={<ServiceRequests />} />
             <Route path="support" element={<Support />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="faq" element={<FAQPage />} />
 
             {/* 404 */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

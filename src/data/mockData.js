@@ -9,6 +9,88 @@ export const formatCurrency = (n) => '₹' + Number(n).toLocaleString('en-IN');
 export const formatNumber = (n) => Number(n).toLocaleString('en-IN');
 
 // ── Agent Profile ───────────────────────
+if (typeof window !== 'undefined') {
+  if (!localStorage.getItem('kfpl_agents')) {
+    localStorage.setItem('kfpl_agents', JSON.stringify([
+      {
+        id: 'ag_001',
+        agentId: 'KFPL-AG-1042',
+        name: 'Rajesh Sharma',
+        email: 'rajesh.sharma@mail.com',
+        phone: '+91 98765 43210',
+        address: '42, MG Road, Indore, MP 452001',
+        joiningDate: '2024-03-15',
+        status: 'Active',
+        slabTier: 'Silver',
+        bankName: 'HDFC Bank',
+        bankAccount: '****6789',
+        ifsc: 'HDFC0001234',
+        onboardingComplete: true,
+        nominee: {
+          name: 'Priya Sharma',
+          relation: 'Spouse',
+          contact: '+91 87654 32100',
+          email: 'priya.sharma@mail.com',
+        },
+        stats: {
+          commissionPaid: 485000,
+          commissionPending: 72500,
+        }
+      },
+      {
+        id: 'ag_002',
+        agentId: 'KFPL-AG-1043',
+        name: 'Karan Malhotra',
+        email: 'karan.malhotra@mail.com',
+        phone: '+91 91111 88888',
+        address: '78, Link Road, Andheri West, Mumbai 400053',
+        joiningDate: '2024-06-01',
+        status: 'Active',
+        slabTier: 'Gold',
+        bankName: 'ICICI Bank',
+        bankAccount: '****4321',
+        ifsc: 'ICIC0000123',
+        onboardingComplete: true,
+        nominee: {
+          name: 'Riya Malhotra',
+          relation: 'Spouse',
+          contact: '+91 91111 77777',
+          email: 'riya.malhotra@mail.com',
+        },
+        stats: {
+          commissionPaid: 620000,
+          commissionPending: 45000,
+        }
+      },
+      {
+        id: 'ag_003',
+        agentId: 'KFPL-AG-1044',
+        name: 'Neha Kapoor',
+        email: 'neha.kapoor@mail.com',
+        phone: '+91 98888 77777',
+        address: '12, Ring Road, Lajpat Nagar, Delhi 110024',
+        joiningDate: '2024-09-10',
+        status: 'Active',
+        slabTier: 'Diamond',
+        bankName: 'State Bank of India',
+        bankAccount: '****5678',
+        ifsc: 'SBIN0000456',
+        onboardingComplete: true,
+        nominee: {
+          name: 'Sunil Kapoor',
+          relation: 'Father',
+          contact: '+91 98888 66666',
+          email: 'sunil.kapoor@mail.com',
+        },
+        stats: {
+          commissionPaid: 950000,
+          commissionPending: 120000,
+        }
+      }
+    ]));
+  }
+}
+
 export const agentProfile = {
   id: 'ag_001',
   agentId: 'KFPL-AG-1042',

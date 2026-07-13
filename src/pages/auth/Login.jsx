@@ -224,7 +224,7 @@ export default function Login() {
       try { list = JSON.parse(stored); } catch (e) { console.error(e); }
     }
     const nextId = list.length > 0 ? Math.max(...list.map(i => i.id || 0)) + 1 : 1;
-    const agentCode = backendCode || `KFPL-AGT-${1000 + nextId}`;
+    const agentCode = backendCode || `KFPL-AG-${1000 + nextId}`;
 
     const newAgentObj = {
       id: nextId,
@@ -400,7 +400,7 @@ export default function Login() {
                   <div className="kfpl-login-form-row">
                     <div className="kfpl-login-input-group">
                       <label className="kfpl-login-label">Citizenship</label>
-                      <select name="citizenship" className="kfpl-login-input" value={regForm.citizenship} onChange={handleRegisterChange} style={{ background: '#12121a' }}>
+                      <select name="citizenship" className="kfpl-login-input" value={regForm.citizenship} onChange={handleRegisterChange}>
                         <option value="National">National (Domestic)</option>
                         <option value="International">International</option>
                       </select>
@@ -447,28 +447,7 @@ export default function Login() {
                     </div>
                   </div>
 
-                  {/* Commission */}
-                  <div className="kfpl-login-section-label">Commission Preferences</div>
-                  <div className="kfpl-login-form-row">
-                    <div className="kfpl-login-input-group">
-                      <label className="kfpl-login-label">One-Time Commission %</label>
-                      <select name="commissionOneTime" className="kfpl-login-input" value={regForm.commissionOneTime} onChange={handleRegisterChange} style={{ background: '#12121a' }}>
-                        <option value="">Select slab</option>
-                        {DEFAULT_ONE_TIME_SLABS.map(s => <option key={s.percentage} value={s.percentage}>{s.label}</option>)}
-                      </select>
-                    </div>
-                    <div className="kfpl-login-input-group">
-                      <label className="kfpl-login-label">Monthly Slab %</label>
-                      <select name="commissionMonthly" className="kfpl-login-input" value={regForm.commissionMonthly} onChange={handleRegisterChange} style={{ background: '#12121a' }}>
-                        <option value="">Select slab</option>
-                        {DEFAULT_MONTHLY_SLABS.map(s => <option key={s.percentage} value={s.percentage}>{s.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="kfpl-login-input-group">
-                    <label className="kfpl-login-label">Special Commission %</label>
-                    <input type="number" step="0.1" name="commissionSpecial" className="kfpl-login-input" placeholder="Enter special commission percentage" value={regForm.commissionSpecial} onChange={handleRegisterChange} />
-                  </div>
+
 
                   {/* Nominee Details */}
                   <div className="kfpl-login-section-label">Nominee Details</div>
@@ -479,7 +458,7 @@ export default function Login() {
                     </div>
                     <div className="kfpl-login-input-group">
                       <label className="kfpl-login-label">Relation</label>
-                      <select name="nomineeRelation" className="kfpl-login-input" value={regForm.nomineeRelation} onChange={handleRegisterChange} style={{ background: '#12121a' }}>
+                      <select name="nomineeRelation" className="kfpl-login-input" value={regForm.nomineeRelation} onChange={handleRegisterChange}>
                         <option value="">Select Relation</option>
                         <option value="Spouse">Spouse</option>
                         <option value="Parent">Parent</option>

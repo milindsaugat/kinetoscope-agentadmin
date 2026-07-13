@@ -100,6 +100,7 @@ const navSections = [
     title: 'Help & Support',
     items: [
       { path: '/service-requests', icon: 'serviceRequests', label: 'Service Requests' },
+      { path: '/faq', icon: 'support', label: 'FAQ' },
       { path: '/support', icon: 'support', label: 'Support' },
       { path: '/settings', icon: 'settings', label: 'Settings' },
     ],
