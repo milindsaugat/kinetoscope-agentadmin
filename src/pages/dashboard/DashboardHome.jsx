@@ -65,11 +65,14 @@ export default function DashboardHome() {
 
   useEffect(() => {
     const authData = localStorage.getItem('kfpl_agent_auth');
+    let isDemo = false;
     if (authData) {
       try {
         const parsed = JSON.parse(authData);
         const rawName = parsed.agent?.name || parsed.agent?.fullName || 'Agent';
         setAgentName(rawName.split(' ')[0]);
+        const email = (parsed.agent?.email || parsed.user?.email || '').toLowerCase().trim();
+        isDemo = email === 'rajesh.sharma@mail.com' || email === 'karan.malhotra@mail.com' || email === 'neha.kapoor@mail.com';
       } catch (e) {
         console.error('Failed to parse agent auth:', e);
       }
@@ -82,7 +85,7 @@ export default function DashboardHome() {
           apiRequest('/api/agent/clients').catch(err => { console.error(err); return null; })
         ]);
 
-        if (dashRes) {
+        if (dashRes && isDemo) {
           setStats({
             totalClients: dashRes.totalClients ?? 0,
             activeInvestments: dashRes.activeInvestments ?? 0,
@@ -97,9 +100,21 @@ export default function DashboardHome() {
           if (dashRes.withdrawals && Array.isArray(dashRes.withdrawals)) {
             setWithdrawals(dashRes.withdrawals);
           }
+        } else {
+          // Force clean state for new agents
+          setStats({
+            totalClients: 0,
+            activeInvestments: 0,
+            thisMonthCommission: 0,
+            commissionPaid: 0,
+            commissionPending: 0,
+            rewardsEarned: 0,
+          });
+          setActivities([]);
+          setWithdrawals([]);
         }
 
-        if (clientsRes) {
+        if (clientsRes && isDemo) {
           const extractClients = (res) => {
             if (!res) return [];
             if (Array.isArray(res)) return res;
@@ -111,6 +126,8 @@ export default function DashboardHome() {
             return [];
           };
           setClients(extractClients(clientsRes));
+        } else {
+          setClients([]);
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err);

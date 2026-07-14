@@ -4,9 +4,10 @@
    PRD Section 7: RW-01 through RW-06
    ============================================================ */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { rewardsList, rewardsHistory } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
+import { apiRequest } from '../../config/apiHelper';
 
 const rewardIcons = {
   star: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
@@ -19,12 +20,50 @@ const rewardIcons = {
 
 export default function RewardsAndRedemption() {
   const toast = useToast();
+  const [rewards, setRewards] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showClaimForm, setShowClaimForm] = useState(null);
   const [activeView, setActiveView] = useState('grid');
+
+  useEffect(() => {
+    const fetchRewards = async () => {
+      setLoading(true);
+      try {
+        const res = await apiRequest('/api/agent/rewards');
+        if (res && res.success && res.data) {
+          let list = [];
+          let hist = [];
+          if (Array.isArray(res.data)) {
+            list = res.data;
+          } else if (res.data.rewards) {
+            list = res.data.rewards;
+            if (res.data.history) hist = res.data.history;
+          } else if (res.data.data) {
+            list = Array.isArray(res.data.data) ? res.data.data : (res.data.data.rewards || []);
+            hist = res.data.data.history || [];
+          }
+          setRewards(list.length > 0 ? list : rewardsList);
+          setHistory(hist.length > 0 ? hist : rewardsHistory);
+        } else {
+          setRewards(rewardsList);
+          setHistory(rewardsHistory);
+        }
+      } catch (err) {
+        console.error('Failed to load rewards:', err);
+        setRewards(rewardsList);
+        setHistory(rewardsHistory);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchRewards();
+  }, []);
+
   const rewardSummary = {
-    unlocked: rewardsList.filter(r => r.status === 'unlocked').length,
-    claimed: rewardsList.filter(r => r.status === 'claimed').length,
-    locked: rewardsList.filter(r => r.status === 'locked').length,
+    unlocked: rewards.filter(r => r.status === 'unlocked').length,
+    claimed: rewards.filter(r => r.status === 'claimed').length,
+    locked: rewards.filter(r => r.status === 'locked').length,
   };
 
   const handleClaim = (e) => {
@@ -75,16 +114,20 @@ export default function RewardsAndRedemption() {
         <button className={`kfpl-tab ${activeView === 'history' ? 'active' : ''}`} onClick={() => setActiveView('history')}>Claim History</button>
       </div>
 
-      {activeView === 'grid' && (
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '60px', color: 'var(--color-text-muted)' }}>
+          Loading rewards dashboard...
+        </div>
+      ) : activeView === 'grid' ? (
         <div className="kfpl-rewards-grid">
-          {rewardsList.map(reward => {
+          {rewards.map(reward => {
             const isLocked = reward.status === 'locked';
             const isClaimed = reward.status === 'claimed';
             const progress = Math.min((reward.currentValue / reward.targetValue) * 100, 100);
 
             return (
               <div
-                key={reward.id}
+                key={reward.id || reward._id}
                 className={`kfpl-reward-card ${isLocked ? 'kfpl-reward-card--locked' : isClaimed ? '' : 'kfpl-reward-card--unlocked'}`}
                 onClick={() => !isLocked && !isClaimed && setShowClaimForm(reward)}
               >
@@ -97,7 +140,7 @@ export default function RewardsAndRedemption() {
                 </div>
                 <div className="kfpl-reward-card-title">{reward.title}</div>
                 <div className="kfpl-reward-card-desc">{reward.description}</div>
-                <div className="kfpl-reward-card-target">{reward.targetLabel}</div>
+                <div className="kfpl-reward-card-target">{reward.targetLabel || `${reward.targetValue} Target`}</div>
                 <div className="kfpl-reward-card-progress">
                   <div className="kfpl-reward-card-progress-bar" style={{ width: `${progress}%` }} />
                 </div>
@@ -108,21 +151,19 @@ export default function RewardsAndRedemption() {
             );
           })}
         </div>
-      )}
-
-      {activeView === 'history' && (
+      ) : (
         <div className="kfpl-table-wrapper">
           <table className="kfpl-table">
             <thead>
               <tr><th>Reward</th><th>Claimed Date</th><th>Status</th><th>Note</th></tr>
             </thead>
             <tbody>
-              {rewardsHistory.map(r => (
-                <tr key={r.id}>
+              {history.map(r => (
+                <tr key={r.id || r._id}>
                   <td style={{ fontWeight: 600 }}>{r.rewardTitle}</td>
-                  <td>{new Date(r.claimedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                  <td>{r.claimedDate ? new Date(r.claimedDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                   <td><span className={`kfpl-badge ${r.status === 'Fulfilled' ? 'kfpl-badge--success' : 'kfpl-badge--warning'}`}>{r.status}</span></td>
-                  <td style={{ color: 'var(--color-text-muted)' }}>{r.note}</td>
+                  <td style={{ color: 'var(--color-text-muted)' }}>{r.note || r.remarks || '—'}</td>
                 </tr>
               ))}
             </tbody>

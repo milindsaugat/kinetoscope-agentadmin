@@ -8,8 +8,6 @@ import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { 
   formatCurrency, 
-  oneTimeSlabs, 
-  monthlySlabs, 
   monthlyChartData,
   oneTimeCommission as mockOneTime,
   monthlyCommission as mockMonthly,
@@ -31,6 +29,42 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+const OdometerValue = ({ numericStr, visible }) => {
+  if (!numericStr) return null;
+  return (
+    <span className="kfpl-odometer-wrapper">
+      {numericStr.split('').map((char, index) => {
+        const isDigit = /\d/.test(char);
+        if (!isDigit) {
+          return (
+            <span key={index} className="kfpl-odometer-char">
+              {char}
+            </span>
+          );
+        }
+
+        const digitVal = visible ? parseInt(char, 10) : 0;
+
+        return (
+          <span key={index} className="kfpl-odometer-digit-container">
+            <span
+              className="kfpl-odometer-digit-reel"
+              style={{
+                transform: `translateY(-${digitVal * 10}%)`,
+                transitionDelay: `${index * 30}ms`
+              }}
+            >
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                <span key={n}>{n}</span>
+              ))}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
+};
+
 function formatDateSafe(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
@@ -42,41 +76,128 @@ export default function CommissionOverview() {
   const [activeTab, setActiveTab] = useState('one-time');
   const toast = useToast();
   const [commissions, setCommissions] = useState([]);
+  const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [odometerVisible, setOdometerVisible] = useState(false);
 
   useEffect(() => {
-    const fetchCommissions = async () => {
+    const fetchData = async () => {
       setLoading(true);
       try {
-        const response = await apiRequest('/api/agent/commissions');
-        const list = Array.isArray(response) ? response : (response.data?.commissions || response.commissions || response.history || (Array.isArray(response.data) ? response.data : []));
+        const [commResponse, clientsResponse] = await Promise.all([
+          apiRequest('/api/agent/commissions'),
+          apiRequest('/api/agent/clients').catch(() => null)
+        ]);
+
+        const list = Array.isArray(commResponse) ? commResponse : (commResponse.data?.commissions || commResponse.commissions || commResponse.history || (Array.isArray(commResponse.data) ? commResponse.data : []));
         setCommissions(list);
+
+        const extractClients = (res) => {
+          if (!res) return [];
+          if (Array.isArray(res)) return res;
+          if (res.data) {
+            if (Array.isArray(res.data)) return res.data;
+            if (res.data.clients && Array.isArray(res.data.clients)) return res.data.clients;
+          }
+          if (res.clients && Array.isArray(res.clients)) return res.clients;
+          return [];
+        };
+        setClients(extractClients(clientsResponse));
       } catch (err) {
-        console.error('Failed to load commissions:', err);
+        console.error('Failed to load commissions data:', err);
         setCommissions([]);
+        setClients([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchCommissions();
+    fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => {
+        setOdometerVisible(true);
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      setOdometerVisible(false);
+    }
+  }, [loading]);
 
   const normalizeType = (t) => {
     if (!t) return '';
     const lower = t.toLowerCase().trim();
-    if (lower === 'one time' || lower === 'one-time' || lower === 'onetime') return 'one-time';
-    if (lower === 'monthly' || lower === 'recurring') return 'monthly';
-    if (lower === 'special' || lower === 'bonus' || lower === 'override') return 'special';
+    if (lower === 'one time' || lower === 'one-time' || lower === 'onetime' || lower === 'one-time onboarding') return 'one-time';
+    if (lower === 'monthly' || lower === 'recurring' || lower === 'monthly recurring') return 'monthly';
+    if (lower === 'special' || lower === 'bonus' || lower === 'override' || lower === 'special override') return 'special';
     return lower;
   };
 
-  const oneTimeCommission = commissions.filter(c => normalizeType(c.type) === 'one-time');
-  const monthlyCommission = commissions.filter(c => normalizeType(c.type) === 'monthly');
-  const specialCommission = commissions.filter(c => normalizeType(c.type) === 'special');
+  const getAgentEmail = () => {
+    const authData = localStorage.getItem('kfpl_agent_auth');
+    if (authData) {
+      try {
+        const parsed = JSON.parse(authData);
+        return (parsed.agent?.email || parsed.user?.email || '').toLowerCase().trim();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return '';
+  };
+
+  const email = getAgentEmail();
+  const isDemo = email === 'rajesh.sharma@mail.com' || email === 'karan.malhotra@mail.com' || email === 'neha.kapoor@mail.com';
+
+  const enrichedCommissions = commissions.map(c => {
+    if (c.clientName && c.clientName !== '—' && c.clientName !== '-') {
+      return c;
+    }
+
+    const cid = c.clientId?._id || c.clientId?.id || c.clientId || c.client?._id || c.client?.id || c.client;
+    if (cid) {
+      const foundClient = clients.find(cl => {
+        const clid = cl.user?._id || cl.profile?.userId || cl._id || cl.id;
+        return String(clid) === String(cid);
+      });
+      if (foundClient) {
+        return {
+          ...c,
+          clientName: foundClient.fullName || foundClient.name || foundClient.profile?.fullName || '—',
+          clientCode: foundClient.clientCode || foundClient.clientId || foundClient.profile?.clientCode || '—',
+          investmentAmount: foundClient.totalInvestment || foundClient.investmentAmount || foundClient.profile?.totalPortfolioValue || 0,
+          slabPercentage: c.slabPercentage || c.slabPercent || (normalizeType(c.type || c.commissionType) === 'one-time' ? (foundClient.oneTimeCommission || 5) : (foundClient.monthlySlab || 2))
+        };
+      }
+    }
+
+    return {
+      ...c,
+      clientName: c.clientName || '—',
+      clientCode: c.clientCode || c.clientId || '—',
+      investmentAmount: c.investmentAmount || 0,
+      slabPercentage: c.slabPercentage || c.slabPercent || '—'
+    };
+  });
+
+  const oneTimeCommission = isDemo 
+    ? enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'one-time') 
+    : enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'one-time' && c.clientName && c.clientName !== '—' && c.clientName !== '-' && c.clientName !== 'Various');
+
+  const monthlyCommission = isDemo 
+    ? enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'monthly') 
+    : enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'monthly' && c.clientName && c.clientName !== '—' && c.clientName !== '-' && c.clientName !== 'Various');
+
+  const specialCommission = isDemo 
+    ? enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'special') 
+    : enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'special' && c.reason && c.reason !== '—' && c.reason !== '-');
 
   const totalOneTime = oneTimeCommission.reduce((s, c) => s + (c.amount || c.commissionEarned || 0), 0);
   const totalMonthly = monthlyCommission.reduce((s, c) => s + (c.amount || 0), 0);
   const totalSpecial = specialCommission.filter(s => s.status === 'Credited' || s.status === 'credited' || s.status === 'paid').reduce((s, c) => s + (c.amount || 0), 0);
+  const totalEarned = totalOneTime + totalMonthly + totalSpecial;
+
   const commissionBreakdown = [
     { label: 'One-Time', value: totalOneTime, helper: `${oneTimeCommission.length} clients` },
     { label: 'Monthly', value: totalMonthly, helper: 'Recurring payouts' },
@@ -181,10 +302,10 @@ export default function CommissionOverview() {
   };
 
   return (
-    <div className="kfpl-page kfpl-commission-page" id="commission-page">
+    <div className="kfpl-page kfpl-commission-page animate-fade-slide-up" id="commission-page">
       <div className="kfpl-page-header">
         <div className="kfpl-page-header-left">
-          <h1 className="kfpl-page-title">Commission Overview</h1>
+          <h2 className="kfpl-page-title">Commission Overview</h2>
           <p className="kfpl-page-subtitle">Track one-time, monthly recurring, and special commission payouts.</p>
         </div>
       </div>
@@ -193,7 +314,9 @@ export default function CommissionOverview() {
       <div className="kfpl-commission-total-card">
         <div className="kfpl-commission-total-main">
           <div className="kfpl-commission-total-label">Total Commission Earned</div>
-          <div className="kfpl-commission-total-value">{formatCurrency(dashboardStats.commissionPaid)}</div>
+          <div className="kfpl-commission-total-value">
+            <OdometerValue numericStr={formatCurrency(totalEarned)} visible={odometerVisible} />
+          </div>
           <div className="kfpl-commission-total-note">Paid and credited commission across all categories</div>
         </div>
         <div className="kfpl-commission-breakdown">
@@ -216,37 +339,75 @@ export default function CommissionOverview() {
 
       {/* ═══ ONE-TIME TAB ═══ */}
       {activeTab === 'one-time' && (
+        <div className="kfpl-panel-card">
+          <div className="kfpl-panel-card-header">
+            <div>
+              <h3>One-Time Commission</h3>
+              <p>Client-wise payout ledger with credited dates</p>
+            </div>
+            <span className="kfpl-badge kfpl-badge--emerald">{oneTimeCommission.length} records</span>
+          </div>
+          <div className="kfpl-table-wrapper">
+            <div className="kfpl-table-scroll">
+              <table className="kfpl-table">
+                <thead>
+                  <tr>
+                    <th>Client Name</th>
+                    <th>Client ID</th>
+                    <th style={{ textAlign: 'right' }}>Investment Amount</th>
+                    <th>Slab %</th>
+                    <th style={{ textAlign: 'right' }}>Commission Earned</th>
+                    <th>Date Credited</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {oneTimeCommission.map((c, i) => (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 600 }}>{c.clientName}</td>
+                      <td className="cell-mono">{c.clientCode || c.clientId || '—'}</td>
+                      <td className="cell-amount">{formatCurrency(c.investmentAmount)}</td>
+                      <td><span className="kfpl-badge kfpl-badge--emerald">{c.slabPercentage || (c.slabPercent ? `${c.slabPercent}%` : '—')}</span></td>
+                      <td className="cell-amount cell-amount--positive">{formatCurrency(c.amount !== undefined ? c.amount : c.commissionEarned)}</td>
+                      <td>{formatDateSafe(c.date || c.dateCredited || c.dateOfJoining)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MONTHLY TAB ═══ */}
+      {activeTab === 'monthly' && (
         <>
+          {/* Monthly Table */}
           <div className="kfpl-panel-card">
             <div className="kfpl-panel-card-header">
               <div>
-                <h3>One-Time Commission</h3>
-                <p>Client-wise payout ledger with credited dates</p>
+                <h3>Monthly Commission Ledger</h3>
+                <p>Recurring payout base and slab percentage</p>
               </div>
-              <span className="kfpl-badge kfpl-badge--emerald">{oneTimeCommission.length} records</span>
+              <span className="kfpl-badge kfpl-badge--info">{monthlyCommission.length} months</span>
             </div>
             <div className="kfpl-table-wrapper">
               <div className="kfpl-table-scroll">
                 <table className="kfpl-table">
                   <thead>
                     <tr>
-                      <th>Client Name</th>
-                      <th>Client ID</th>
-                      <th>Investment Amount</th>
+                      <th>Month</th>
+                      <th style={{ textAlign: 'right' }}>Investment Base</th>
                       <th>Slab %</th>
-                      <th>Commission Earned</th>
-                      <th>Date Credited</th>
+                      <th style={{ textAlign: 'right' }}>Commission Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {oneTimeCommission.map((c, i) => (
+                    {monthlyCommission.map((m, i) => (
                       <tr key={i}>
-                        <td style={{ fontWeight: 600 }}>{c.clientName}</td>
-                        <td className="cell-mono">{c.clientCode || c.clientId || '—'}</td>
-                        <td className="cell-amount">{formatCurrency(c.investmentAmount)}</td>
-                        <td><span className="kfpl-badge kfpl-badge--emerald">{c.slabPercentage || (c.slabPercent ? `${c.slabPercent}%` : '—')}</span></td>
-                        <td className="cell-amount cell-amount--positive">{formatCurrency(c.amount !== undefined ? c.amount : c.commissionEarned)}</td>
-                        <td>{formatDateSafe(c.date || c.dateCredited || c.dateOfJoining)}</td>
+                        <td style={{ fontWeight: 600 }}>{m.period || m.month}</td>
+                        <td className="cell-amount">{formatCurrency(m.investmentAmount !== undefined ? m.investmentAmount : m.investmentBase)}</td>
+                        <td><span className="kfpl-badge kfpl-badge--emerald">{m.slabPercentage || (m.slabPercent ? `${m.slabPercent}%` : '—')}</span></td>
+                        <td className="cell-amount cell-amount--positive">{formatCurrency(m.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -255,36 +416,8 @@ export default function CommissionOverview() {
             </div>
           </div>
 
-          {/* Slab Reference */}
-          <div className="kfpl-card" style={{ marginTop: 24 }}>
-            <div className="kfpl-card-header"><h3>One-Time Commission Slab Reference</h3></div>
-            <div className="kfpl-card-body" style={{ padding: 0 }}>
-              <table className="kfpl-slab-table">
-                <thead>
-                  <tr>
-                    <th>Investment Range</th>
-                    <th>Commission %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {oneTimeSlabs.map((s, i) => (
-                    <tr key={i}>
-                      <td>{formatCurrency(s.min)} — {s.max === Infinity ? '& above' : formatCurrency(s.max)}</td>
-                      <td style={{ fontWeight: 600, color: 'var(--color-gold-dark)' }}>{s.percent}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ═══ MONTHLY TAB ═══ */}
-      {activeTab === 'monthly' && (
-        <>
           {/* Chart */}
-          <div className="kfpl-chart-wrapper">
+          <div className="kfpl-chart-wrapper" style={{ marginTop: 24 }}>
             <div className="kfpl-chart-header">
               <div>
                 <div className="kfpl-chart-title">Monthly Commission Trend</div>
@@ -313,54 +446,6 @@ export default function CommissionOverview() {
               </ResponsiveContainer>
             </div>
           </div>
-
-          {/* Monthly Table */}
-          <div className="kfpl-panel-card" style={{ marginTop: 24 }}>
-            <div className="kfpl-panel-card-header">
-              <div>
-                <h3>Monthly Commission Ledger</h3>
-                <p>Recurring payout base and slab percentage</p>
-              </div>
-              <span className="kfpl-badge kfpl-badge--info">{monthlyCommission.length} months</span>
-            </div>
-            <div className="kfpl-table-wrapper">
-              <div className="kfpl-table-scroll">
-                <table className="kfpl-table">
-                  <thead>
-                    <tr><th>Month</th><th>Investment Base</th><th>Slab %</th><th>Commission Amount</th></tr>
-                  </thead>
-                  <tbody>
-                    {monthlyCommission.map((m, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 600 }}>{m.period || m.month}</td>
-                        <td className="cell-amount">{formatCurrency(m.investmentAmount !== undefined ? m.investmentAmount : m.investmentBase)}</td>
-                        <td><span className="kfpl-badge kfpl-badge--emerald">{m.slabPercentage || (m.slabPercent ? `${m.slabPercent}%` : '—')}</span></td>
-                        <td className="cell-amount cell-amount--positive">{formatCurrency(m.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* Monthly Slab Reference */}
-          <div className="kfpl-card" style={{ marginTop: 24 }}>
-            <div className="kfpl-card-header"><h3>Monthly Commission Slab Reference</h3></div>
-            <div className="kfpl-card-body" style={{ padding: 0 }}>
-              <table className="kfpl-slab-table">
-                <thead><tr><th>Investment Range</th><th>Monthly %</th></tr></thead>
-                <tbody>
-                  {monthlySlabs.map((s, i) => (
-                    <tr key={i}>
-                      <td>{formatCurrency(s.min)} — {s.max === Infinity ? '& above' : formatCurrency(s.max)}</td>
-                      <td style={{ fontWeight: 600, color: 'var(--color-gold-dark)' }}>{s.percent}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </>
       )}
 
@@ -377,7 +462,14 @@ export default function CommissionOverview() {
           <div className="kfpl-table-wrapper">
             <div className="kfpl-table-scroll">
               <table className="kfpl-table">
-                <thead><tr><th>Date</th><th>Reason</th><th>Amount</th><th>Status</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Reason</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {specialCommission.map((s, i) => (
                     <tr key={s._id || s.id || i}>

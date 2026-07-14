@@ -24,6 +24,18 @@ export default function Withdrawal() {
     try {
       setLoading(true);
 
+      const authData = localStorage.getItem('kfpl_agent_auth');
+      let isDemo = false;
+      if (authData) {
+        try {
+          const parsed = JSON.parse(authData);
+          const email = (parsed.agent?.email || parsed.user?.email || '').toLowerCase().trim();
+          isDemo = email === 'rajesh.sharma@mail.com' || email === 'karan.malhotra@mail.com' || email === 'neha.kapoor@mail.com';
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
       // 1. Fetch Profile for Bank Info
       const profile = await apiRequest('/api/agent/profile').catch(() => null);
       if (profile) {
@@ -39,7 +51,7 @@ export default function Withdrawal() {
 
       // 2. Fetch Dashboard for pending balance
       const dash = await apiRequest('/api/agent/dashboard').catch(() => null);
-      if (dash) {
+      if (dash && isDemo) {
         if (dash.commissionPending !== undefined) {
           setPendingBalance(dash.commissionPending);
         } else if (dash.data?.commissionPending !== undefined) {
@@ -51,11 +63,14 @@ export default function Withdrawal() {
         } else if (dash.data?.withdrawals && Array.isArray(dash.data.withdrawals)) {
           setHistory(dash.data.withdrawals);
         }
+      } else {
+        setPendingBalance(0);
+        setHistory([]);
       }
 
       // 3. Fetch specific withdrawals list if endpoint exists
       const specificData = await apiRequest('/api/agent/withdrawals').catch(() => null);
-      if (specificData) {
+      if (specificData && isDemo) {
         let list = [];
         if (Array.isArray(specificData)) {
           list = specificData;

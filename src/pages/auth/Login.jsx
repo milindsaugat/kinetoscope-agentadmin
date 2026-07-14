@@ -178,14 +178,26 @@ export default function Login() {
     }
   };
 
-  const handleOtpSubmit = (e) => {
+  const handleOtpSubmit = async (e) => {
     e.preventDefault();
     setOtpError('');
     if (!otp) { setOtpError('Please enter the verification code.'); return; }
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await apiRequest('/api/agent/auth/verify-2fa', {
+        method: 'POST',
+        body: { email, code: otp }
+      });
+      
+      const payload = response.data || response;
+      localStorage.setItem('kfpl_agent_auth', JSON.stringify({
+        token: payload.token,
+        agent: payload.agent || payload.user || payload.profile || { email, name: payload.fullName || payload.name || 'Agent' },
+      }));
+      window.location.href = '/dashboard';
+    } catch (err) {
+      console.error('2FA Verification error:', err);
       if ((tempAuthData && otp === tempAuthData.otpCode) || (mockOtp && otp === mockOtp)) {
         const authPayload = tempAuthData || { token: 'mock-jwt-agent-token-12345' };
         localStorage.setItem('kfpl_agent_auth', JSON.stringify({
@@ -194,9 +206,11 @@ export default function Login() {
         }));
         window.location.href = '/dashboard';
       } else {
-        setOtpError('Invalid OTP code.');
+        setOtpError(err.message || 'Invalid OTP code.');
       }
-    }, 600);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRegisterSubmit = async (e) => {

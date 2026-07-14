@@ -36,6 +36,20 @@ export default defineConfig(async ({ mode }) => {
           target,
           changeOrigin: true,
           secure: false,
+          configure: (proxy, _options) => {
+            proxy.on('proxyRes', (proxyRes, req, _res) => {
+              if (req.url.includes('/profile')) {
+                let body = [];
+                proxyRes.on('data', (chunk) => {
+                  body.push(chunk);
+                });
+                proxyRes.on('end', () => {
+                  body = Buffer.concat(body).toString();
+                  console.log('DEBUG_PROXY_PROFILE_RESPONSE:', body);
+                });
+              }
+            });
+          }
         }
       }
     }

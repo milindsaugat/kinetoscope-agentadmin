@@ -6,6 +6,7 @@
 
 import { NavLink, useLocation } from 'react-router-dom';
 import { agentProfile } from '../../data/mockData';
+import { apiRequest } from '../../config/apiHelper';
 
 // ── SVG Icons ───────────────────────
 const icons = {
@@ -110,7 +111,12 @@ const navSections = [
 export default function Sidebar({ isCollapsed, onToggle, isMobileOpen, onMobileClose }) {
   const location = useLocation();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await apiRequest('/api/agent/auth/logout', { method: 'POST' }).catch(() => {});
+    } catch (e) {
+      console.error(e);
+    }
     localStorage.removeItem('kfpl_agent_auth');
     window.location.href = '/login';
   };

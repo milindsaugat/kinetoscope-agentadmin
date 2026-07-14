@@ -15,6 +15,24 @@ const profileIcons = {
   nominee: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 11c1.66 0 3-1.57 3-3.5S17.66 4 16 4s-3 1.57-3 3.5S14.34 11 16 11z"/><path d="M8 11c1.66 0 3-1.57 3-3.5S9.66 4 8 4 5 5.57 5 7.5 6.34 11 8 11z"/><path d="M2 20c.55-3.1 3.01-5 6-5 1.25 0 2.38.32 3.31.9"/><path d="M22 20c-.55-3.1-3.01-5-6-5-1.25 0-2.38.32-3.31.9"/></svg>
 };
 
+const formatAgentID = (rawId) => {
+  if (!rawId || rawId === '—') return '—';
+  if (typeof rawId !== 'string') rawId = String(rawId);
+  if (rawId.startsWith('KFPL-AG-')) return rawId;
+  const digits = rawId.match(/\d+/);
+  if (digits) {
+    let val = parseInt(digits[0], 10);
+    if (val < 1000) {
+      val = 1000 + val;
+    }
+    return `KFPL-AG-${val}`;
+  }
+  if (rawId.length > 5) {
+    return `KFPL-AG-${rawId.substring(rawId.length - 4).toUpperCase()}`;
+  }
+  return `KFPL-AG-1001`;
+};
+
 export default function Profile() {
   const toast = useToast();
   const [profile, setProfile] = useState(null);
@@ -31,15 +49,86 @@ export default function Profile() {
 
         const extractProfile = (res) => {
           if (!res) return null;
-          if (res.profile) return res.profile;
-          if (res.agent) return res.agent;
-          if (res.data) {
-            if (res.data.profile) return res.data.profile;
-            if (res.data.agent) return res.data.agent;
-            return res.data;
+          let data = res;
+          if (res.success && res.data) {
+            data = res.data;
           }
-          return res;
+          
+          const user = data.user || {};
+          const profileObj = data.profile || data.agent || data;
+          const header = data.header || {};
+          
+          const rawId = header.agentCode || 
+                        profileObj.agentCode || 
+                        profileObj.agentId || 
+                        user.agentCode || 
+                        user.clientCode || 
+                        profileObj.code || 
+                        profileObj._id || 
+                        profileObj.id || 
+                        '—';
+          const formattedId = formatAgentID(rawId);
+
+          // Smart Status selector: check if any fields state it is active
+          const getStatus = () => {
+            const possibleStatuses = [
+              profileObj.status,
+              header.status,
+              user.isActive ? 'active' : null,
+              profileObj.isActive ? 'active' : null
+            ].filter(Boolean).map(s => String(s).toLowerCase());
+            
+            if (possibleStatuses.includes('active')) return 'active';
+            if (possibleStatuses.includes('on hold')) return 'on hold';
+            if (possibleStatuses.includes('blocked')) return 'blocked';
+            return possibleStatuses[0] || 'inactive';
+          };
+
+          // Smart KYC status selector: check if any fields state it is verified
+          const getKycStatus = () => {
+            const possibleKyc = [
+              profileObj.kyc,
+              profileObj.kycStatus,
+              header.kycStatus,
+              data.kycStatus
+            ].filter(Boolean).map(s => String(s).toUpperCase());
+            
+            if (possibleKyc.includes('VERIFIED') || possibleKyc.includes('APPROVED')) return 'VERIFIED';
+            if (possibleKyc.includes('REJECTED') || possibleKyc.includes('FAILED')) return 'REJECTED';
+            if (possibleKyc.includes('PENDING')) return 'PENDING';
+            return possibleKyc[0] || 'PENDING';
+          };
+
+          const statusVal = getStatus();
+          const kycStatusVal = getKycStatus();
+
+          return {
+            ...profileObj,
+            name: profileObj.fullName || user.name || profileObj.name || 'Agent',
+            fullName: profileObj.fullName || user.name || profileObj.name || 'Agent',
+            email: profileObj.email || user.email || '',
+            phone: profileObj.phone || user.phone || '',
+            address: profileObj.address || 'India',
+            agentId: formattedId,
+            code: formattedId,
+            status: statusVal,
+            kycStatus: kycStatusVal,
+            kyc: kycStatusVal,
+            joiningDate: profileObj.joinDate || profileObj.joiningDate || user.createdAt || profileObj.createdAt,
+            bankName: profileObj.bankName || '—',
+            bankAccount: profileObj.accountNumber || profileObj.accountNo || profileObj.bankAccount || '—',
+            accountNumber: profileObj.accountNumber || profileObj.accountNo || profileObj.bankAccount || '—',
+            accountNo: profileObj.accountNumber || profileObj.accountNo || profileObj.bankAccount || '—',
+            ifsc: profileObj.ifscCode || profileObj.ifsc || '—',
+            ifscCode: profileObj.ifscCode || profileObj.ifsc || '—',
+            nomineeName: profileObj.nomineeName || profileObj.nominee?.name || '—',
+            nomineeRelation: profileObj.nomineeRelation || profileObj.nominee?.relation || '—',
+            nomineePhone: profileObj.nomineePhone || profileObj.nominee?.contact || '—',
+            nomineeContact: profileObj.nomineePhone || profileObj.nominee?.contact || '—',
+            nomineeEmail: profileObj.nomineeEmail || profileObj.nominee?.email || 'Not provided'
+          };
         };
+
         const rawProfile = extractProfile(profRes);
         setProfile(rawProfile);
 

@@ -4,13 +4,46 @@
    PRD Section 8: G-01, G-02, G-03
    ============================================================ */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { growOffers, calculatorSlabs, formatCurrency } from '../../data/mockData';
+import { apiRequest } from '../../config/apiHelper';
 
 export default function GrowWithKFPL() {
   const [investmentAmount, setInvestmentAmount] = useState('');
   const [calcResult, setCalcResult] = useState(null);
   const [selectedOffer, setSelectedOffer] = useState(null);
+  const [offers, setOffers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchOffers = async () => {
+      setLoading(true);
+      try {
+        const res = await apiRequest('/api/agent/articles');
+        if (res && res.success && res.data) {
+          const list = Array.isArray(res.data) ? res.data : (res.data.articles || res.data.offers || []);
+          const mapped = list.map(item => ({
+            id: item._id || item.id,
+            title: item.title,
+            description: item.description || item.content || '',
+            expectedROI: item.expectedROI || item.roi || '—',
+            period: item.period || item.duration || '—',
+            minInvestment: item.minInvestment || item.minimum || 0,
+            isNew: item.isNew ?? false
+          }));
+          setOffers(mapped.length > 0 ? mapped : growOffers);
+        } else {
+          setOffers(growOffers);
+        }
+      } catch (err) {
+        console.error('Failed to load articles/offers:', err);
+        setOffers(growOffers);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOffers();
+  }, []);
 
   const handleCalculate = () => {
     const amount = parseFloat(investmentAmount.replace(/,/g, ''));
@@ -43,11 +76,11 @@ export default function GrowWithKFPL() {
         </div>
         <div className="kfpl-grow-metrics">
           <div className="kfpl-grow-metric">
-            <span>{growOffers.length}</span>
+            <span>{offers.length}</span>
             <small>Active Plans</small>
           </div>
           <div className="kfpl-grow-metric">
-            <span>{formatCurrency(Math.min(...growOffers.map(offer => offer.minInvestment)))}</span>
+            <span>{formatCurrency(offers.length > 0 ? Math.min(...offers.map(offer => offer.minInvestment || 0)) : 0)}</span>
             <small>Min Investment</small>
           </div>
         </div>
@@ -57,28 +90,34 @@ export default function GrowWithKFPL() {
       <div className="kfpl-section-header">
         <h2>Current Offers & Plans</h2>
       </div>
-      <div className="kfpl-offers-grid">
-        {growOffers.map(offer => (
-          <div key={offer.id} className="kfpl-offer-card" onClick={() => setSelectedOffer(offer)}>
-            <div className="kfpl-offer-card-banner">
-              {offer.isNew && (
-                <span className="kfpl-badge kfpl-badge--emerald" style={{ position: 'absolute', top: 12, left: 12, zIndex: 1 }}>NEW</span>
-              )}
-              <svg className="kfpl-offer-card-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-              </svg>
-            </div>
-            <div className="kfpl-offer-card-body">
-              <div className="kfpl-offer-card-title">{offer.title}</div>
-              <div className="kfpl-offer-card-desc">{offer.description}</div>
-              <div className="kfpl-offer-card-footer">
-                <span className="kfpl-badge kfpl-badge--info">{offer.expectedROI} ROI</span>
-                <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{offer.period}</span>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+          Loading active investment offers...
+        </div>
+      ) : (
+        <div className="kfpl-offers-grid">
+          {offers.map(offer => (
+            <div key={offer.id} className="kfpl-offer-card" onClick={() => setSelectedOffer(offer)}>
+              <div className="kfpl-offer-card-banner">
+                {offer.isNew && (
+                  <span className="kfpl-badge kfpl-badge--emerald" style={{ position: 'absolute', top: 12, left: 12, zIndex: 1 }}>NEW</span>
+                )}
+                <svg className="kfpl-offer-card-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+                </svg>
+              </div>
+              <div className="kfpl-offer-card-body">
+                <div className="kfpl-offer-card-title">{offer.title}</div>
+                <div className="kfpl-offer-card-desc">{offer.description}</div>
+                <div className="kfpl-offer-card-footer">
+                  <span className="kfpl-badge kfpl-badge--info">{offer.expectedROI} ROI</span>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{offer.period}</span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Income Calculator */}
       <div style={{ marginTop: 40 }}>
@@ -191,5 +230,3 @@ export default function GrowWithKFPL() {
     </div>
   );
 }
-
-/* ============ END: GrowWithKFPL.jsx ============ */
