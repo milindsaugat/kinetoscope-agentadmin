@@ -245,7 +245,7 @@ export default function Login() {
       if (nomineeProofDocFile) formData.append('nomineeProofDocument', nomineeProofDocFile);
       if (agreementDocFile) formData.append('agreementDocument', agreementDocFile);
 
-      await apiRequest('/api/super-admin/agents', {
+      await apiRequest('/api/agent/auth/register', {
         method: 'POST',
         body: formData,
       });
