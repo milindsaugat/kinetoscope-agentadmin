@@ -245,23 +245,20 @@ export default function Login() {
       if (nomineeProofDocFile) formData.append('nomineeProofDocument', nomineeProofDocFile);
       if (agreementDocFile) formData.append('agreementDocument', agreementDocFile);
 
-      await apiRequest('/api/agent/auth/register', {
+      const res = await apiRequest('/api/agent/auth/register', {
         method: 'POST',
         body: formData,
       });
 
-      syncLocalAgent();
+      syncLocalAgent(res.data?.code || res.code);
       addToast('Registration successful! You can now log in.', 'success', 'Account Created');
       setActiveTab('login');
       setEmail(regForm.email);
       setStep('credentials');
     } catch (err) {
       console.error(err);
-      syncLocalAgent();
-      addToast('Registered successfully in local sandbox storage.', 'success', 'Registration Completed');
-      setActiveTab('login');
-      setEmail(regForm.email);
-      setStep('credentials');
+      setError(err.message || 'Registration failed. Please check your inputs.');
+      addToast(err.message || 'Registration failed', 'error', 'Error');
     } finally {
       setLoading(false);
     }
