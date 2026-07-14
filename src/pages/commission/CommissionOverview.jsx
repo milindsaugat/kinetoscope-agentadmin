@@ -77,6 +77,7 @@ export default function CommissionOverview() {
   const toast = useToast();
   const [commissions, setCommissions] = useState([]);
   const [clients, setClients] = useState([]);
+  const [agentProfile, setAgentProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [odometerVisible, setOdometerVisible] = useState(false);
 
@@ -84,9 +85,10 @@ export default function CommissionOverview() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [commResponse, clientsResponse] = await Promise.all([
+        const [commResponse, clientsResponse, profileResponse] = await Promise.all([
           apiRequest('/api/agent/commissions'),
-          apiRequest('/api/agent/clients').catch(() => null)
+          apiRequest('/api/agent/clients').catch(() => null),
+          apiRequest('/api/agent/profile').catch(() => null)
         ]);
 
         const list = Array.isArray(commResponse) ? commResponse : (commResponse.data?.commissions || commResponse.commissions || commResponse.history || (Array.isArray(commResponse.data) ? commResponse.data : []));
@@ -103,10 +105,21 @@ export default function CommissionOverview() {
           return [];
         };
         setClients(extractClients(clientsResponse));
+
+        const extractProfile = (res) => {
+          if (!res) return null;
+          let data = res;
+          if (res.success && res.data) {
+            data = res.data;
+          }
+          return data.profile || data.agent || data;
+        };
+        setAgentProfile(extractProfile(profileResponse));
       } catch (err) {
         console.error('Failed to load commissions data:', err);
         setCommissions([]);
         setClients([]);
+        setAgentProfile(null);
       } finally {
         setLoading(false);
       }
@@ -150,7 +163,91 @@ export default function CommissionOverview() {
   const email = getAgentEmail();
   const isDemo = email === 'rajesh.sharma@mail.com' || email === 'karan.malhotra@mail.com' || email === 'neha.kapoor@mail.com';
 
-  const enrichedCommissions = commissions.map(c => {
+  const getCalculatedCommissions = (prof, cls) => {
+    const list = [];
+    if (!prof || !cls || cls.length === 0) return [];
+
+    cls.forEach((cl, index) => {
+      const totalInv = cl.totalInvestment || cl.investmentAmount || 0;
+      if (totalInv <= 0) return;
+
+      const otRate = parseFloat(prof.oneTimeCommission || 0);
+      const mRate = parseFloat(prof.monthlySlab || prof.monthlySlabPercent || 0);
+      const spRate = parseFloat(prof.specialCommission || 0);
+
+      const joinDateStr = cl.dateOfJoining || cl.joinDate || cl.createdAt || '';
+      let dateVal = new Date();
+      if (joinDateStr) {
+        const d = new Date(joinDateStr);
+        if (!isNaN(d.getTime())) {
+          dateVal = d;
+        }
+      }
+
+      const monthYearStr = dateVal.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+
+      // 1. One-Time Onboarding Commission
+      if (otRate > 0) {
+        const otAmt = Math.round((totalInv * otRate) / 100);
+        list.push({
+          id: `calc-ot-${cl.id || cl._id}-${index}`,
+          month: monthYearStr,
+          date: dateVal.toISOString().split('T')[0],
+          type: 'one-time',
+          commissionType: 'One-Time',
+          amount: otAmt,
+          status: 'Paid',
+          clientId: cl.id || cl._id,
+          clientName: cl.name || cl.fullName || '',
+          clientCode: cl.clientCode || cl.clientId || '',
+          investmentAmount: totalInv,
+          slabPercentage: otRate
+        });
+      }
+
+      // 2. Monthly Recurring Commission
+      if (mRate > 0) {
+        const mAmt = Math.round((totalInv * mRate) / 100);
+        list.push({
+          id: `calc-m-${cl.id || cl._id}-${index}`,
+          month: monthYearStr,
+          date: dateVal.toISOString().split('T')[0],
+          type: 'monthly',
+          commissionType: 'Monthly',
+          amount: mAmt,
+          status: 'Paid',
+          clientId: cl.id || cl._id,
+          clientName: cl.name || cl.fullName || '',
+          clientCode: cl.clientCode || cl.clientId || '',
+          investmentAmount: totalInv,
+          slabPercentage: mRate
+        });
+      }
+
+      // 3. Special Override Commission
+      if (spRate > 0) {
+        const spAmt = Math.round((totalInv * spRate) / 100);
+        list.push({
+          id: `calc-sp-${cl.id || cl._id}-${index}`,
+          month: monthYearStr,
+          date: dateVal.toISOString().split('T')[0],
+          type: 'special',
+          commissionType: 'Special',
+          amount: spAmt,
+          status: 'Paid',
+          clientId: cl.id || cl._id,
+          clientName: cl.name || cl.fullName || '',
+          clientCode: cl.clientCode || cl.clientId || '',
+          investmentAmount: totalInv,
+          slabPercentage: spRate
+        });
+      }
+    });
+
+    return list;
+  };
+
+  const dbEnriched = commissions.map(c => {
     if (c.clientName && c.clientName !== '—' && c.clientName !== '-') {
       return c;
     }
@@ -167,7 +264,7 @@ export default function CommissionOverview() {
           clientName: foundClient.fullName || foundClient.name || foundClient.profile?.fullName || '—',
           clientCode: foundClient.clientCode || foundClient.clientId || foundClient.profile?.clientCode || '—',
           investmentAmount: foundClient.totalInvestment || foundClient.investmentAmount || foundClient.profile?.totalPortfolioValue || 0,
-          slabPercentage: c.slabPercentage || c.slabPercent || (normalizeType(c.type || c.commissionType) === 'one-time' ? (foundClient.oneTimeCommission || 5) : (foundClient.monthlySlab || 2))
+          slabPercentage: c.slabPercentage || c.slabPercent || (normalizeType(c.type || c.commissionType) === 'one-time' ? (agentProfile?.oneTimeCommission || 5) : (agentProfile?.monthlySlab || 2))
         };
       }
     }
@@ -179,6 +276,22 @@ export default function CommissionOverview() {
       investmentAmount: c.investmentAmount || 0,
       slabPercentage: c.slabPercentage || c.slabPercent || '—'
     };
+  });
+
+  const calculatedComms = getCalculatedCommissions(agentProfile, clients);
+
+  const enrichedCommissions = [...dbEnriched];
+  calculatedComms.forEach(calc => {
+    const hasDbEquivalent = dbEnriched.some(db => {
+      const dbCid = db.clientId?._id || db.clientId?.id || db.clientId || db.client?._id || db.client?.id || db.client;
+      const calcCid = calc.clientId;
+      const dbType = normalizeType(db.type || db.commissionType);
+      const calcType = normalizeType(calc.type);
+      return String(dbCid) === String(calcCid) && dbType === calcType;
+    });
+    if (!hasDbEquivalent) {
+      enrichedCommissions.push(calc);
+    }
   });
 
   const oneTimeCommission = isDemo 
