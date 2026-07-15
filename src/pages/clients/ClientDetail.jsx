@@ -4,13 +4,48 @@
    Matches Super Admin's InvestorDetail.jsx structure and aesthetics perfectly
    ============================================================ */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import { formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest } from '../../config/apiHelper';
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '40px', background: '#FFF5F5', color: '#C53030', fontFamily: 'monospace', minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{ maxWidth: '600px', width: '90%', background: 'white', padding: '24px', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', border: '1px solid #FEB2B2' }}>
+            <h3 style={{ margin: '0 0 10px 0', borderBottom: '2px solid #FEB2B2', paddingBottom: '8px', color: '#E53E3E' }}>⚠️ React Rendering Crash</h3>
+            <p style={{ fontWeight: 'bold', color: '#2D3748' }}>{this.state.error?.toString()}</p>
+            <pre style={{ overflowX: 'auto', background: '#F7FAFC', padding: '12px', borderRadius: '6px', fontSize: '0.8rem', color: '#4A5568', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              {this.state.error?.stack}
+            </pre>
+            <button 
+              onClick={() => window.location.reload()} 
+              style={{ marginTop: '16px', background: '#E53E3E', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /* ── helpers for downloading statements ─────────────────────── */
 function downloadClientROISingleCSV(roi, client) {
@@ -366,6 +401,15 @@ const perkDetails = {
   'Revenue Share Bonus': { desc: 'Additional 1.5% bonus payout on high-performing distribution segments.', icon: '💰' }
 };
 
+const formatDate = (dateVal) => {
+  if (!dateVal) return '—';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '—';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${d.getFullYear()}`;
+};
+
 export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -373,6 +417,7 @@ export default function ClientDetail() {
   const [activeTab, setActiveTab] = useState('profile');
   const [rawClient, setRawClient] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [viewingDoc, setViewingDoc] = useState(null);
 
   useEffect(() => {
     const fetchClient = async () => {
@@ -427,21 +472,25 @@ export default function ClientDetail() {
   }
 
   // Fallbacks to enrich rawClient to match all Super Admin Investor fields
+  const profile = rawClient.profile || rawClient || {};
   const client = {
-    dob: rawClient.dob || '1987-10-14',
-    address: rawClient.address || '42, Residency Road, Near Brigade Junction, Bangalore, Karnataka 560025',
-    kyc: rawClient.kyc || rawClient.kycStatus || 'Verified',
-    pan: rawClient.pan || rawClient.panNumber || 'ABCDE5678F',
-    bankName: rawClient.bankName || 'HDFC Bank',
-    accountNo: rawClient.accountNo || rawClient.accountNumber || 'XXXX9876',
-    ifsc: rawClient.ifsc || rawClient.ifscCode || 'HDFC0001042',
-    riskProfile: rawClient.riskProfile || 'Moderate',
-    name: rawClient.name || rawClient.fullName || 'Client',
-    clientId: rawClient.clientId || rawClient.id || rawClient._id,
-    roiPercent: rawClient.roiPercent || rawClient.monthlyRoi || 5.0,
-    totalInvestment: rawClient.totalInvestment || rawClient.investmentAmount || 0,
-    dateOfJoining: rawClient.dateOfJoining || rawClient.joinDate || rawClient.createdAt,
-    ...rawClient
+    ...rawClient,
+    ...profile,
+    dob: profile.dob || rawClient.dob || '1987-10-14',
+    address: profile.address || rawClient.address || '42, Residency Road, Near Brigade Junction, Bangalore, Karnataka 560025',
+    kyc: profile.kyc || profile.kycStatus || rawClient.kycStatus || rawClient.kyc || 'Verified',
+    pan: profile.pan || profile.panNumber || rawClient.pan || rawClient.panNumber || 'ABCDE5678F',
+    bankName: profile.bankName || rawClient.bankName || 'HDFC Bank',
+    accountNo: profile.accountNo || profile.accountNumber || rawClient.accountNo || rawClient.accountNumber || 'XXXX9876',
+    ifsc: profile.ifsc || profile.ifscCode || rawClient.ifsc || rawClient.ifscCode || 'HDFC0001042',
+    riskProfile: profile.riskProfile || rawClient.riskProfile || 'Moderate',
+    name: profile.name || profile.fullName || rawClient.name || rawClient.fullName || 'Client',
+    clientId: profile.clientId || profile.id || profile._id || rawClient.clientId || rawClient.id || rawClient._id,
+    roiPercent: profile.roiPercent || profile.monthlyRoi || rawClient.roiPercent || rawClient.monthlyRoi || 5.0,
+    totalInvestment: profile.totalInvestment || profile.totalPortfolioValue || rawClient.totalInvestment || rawClient.investmentAmount || 0,
+    dateOfJoining: profile.dateOfJoining || profile.joinDate || rawClient.dateOfJoining || rawClient.joinDate || rawClient.createdAt || profile.createdAt,
+    mobile: profile.mobile || profile.phone || rawClient.mobile || rawClient.phone || '—',
+    status: profile.status || rawClient.status || 'Active'
   };
 
   // Determine category tier
@@ -479,7 +528,6 @@ export default function ClientDetail() {
   client.category = category;
 
   const tabs = ['profile', 'investments', 'roi', 'perks', 'documents'];
-  const [viewingDoc, setViewingDoc] = useState(null);
 
   const totalPaidROI = roiHistory.filter(r => r.status === 'paid').reduce((sum, r) => sum + r.amount, 0);
   const totalPendingROI = roiHistory.filter(r => r.status === 'pending').reduce((sum, r) => sum + r.amount, 0);
@@ -494,12 +542,13 @@ export default function ClientDetail() {
   const perks = getPerksList(category);
 
   return (
-    <div className="kfpl-page" id="client-detail-page">
+    <ErrorBoundary>
+      <div className="kfpl-page" id="client-detail-page">
       {/* Premium Gradient Header Card */}
       <div className="kfpl-detail-card-header">
         <div className="kfpl-detail-profile">
           <div className="kfpl-detail-avatar">
-            {client.name.split(' ').map(n => n[0]).join('')}
+            {(client.name || 'Client').split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase()}
           </div>
           <div>
             <h2 className="kfpl-detail-name" style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800 }}>{client.name}</h2>
@@ -599,7 +648,7 @@ export default function ClientDetail() {
               <div className="kfpl-detail-info-item-content">
                 <span className="kfpl-detail-info-item-label">Join Date</span>
                 <span className="kfpl-detail-info-item-value">
-                  {new Date(client.dateOfJoining).toLocaleDateString('en-GB')}
+                  {formatDate(client.dateOfJoining)}
                 </span>
               </div>
             </div>
@@ -705,8 +754,8 @@ export default function ClientDetail() {
                         {inv.risk}
                       </Badge>
                     </td>
-                    <td>{new Date(inv.date).toLocaleDateString('en-GB')}</td>
-                    <td><Badge status={inv.status.toLowerCase()}>{inv.status}</Badge></td>
+                    <td>{formatDate(inv.date)}</td>
+                    <td><Badge status={inv.status}>{inv.status}</Badge></td>
                   </tr>
                 ))}
               </tbody>
@@ -888,11 +937,11 @@ export default function ClientDetail() {
 
           <div className="kfpl-detail-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
             {[
-              { id: 'pan', label: 'PAN Card Upload', desc: 'Proof of PAN Card Identification', filename: `${client.name.replace(/\s/g, '_')}_PAN.pdf`, size: '1.2 MB' },
-              { id: 'aadhar', label: 'Aadhaar Card Upload', desc: 'Proof of Identity and Address', filename: `${client.name.replace(/\s/g, '_')}_Aadhaar.pdf`, size: '2.4 MB' },
-              { id: 'bank', label: 'Bank Details Document', desc: 'Cancelled Cheque or Bank Statement', filename: `${client.name.replace(/\s/g, '_')}_BankProof.pdf`, size: '1.8 MB' },
+              { id: 'pan', label: 'PAN Card Upload', desc: 'Proof of PAN Card Identification', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_PAN.pdf`, size: '1.2 MB' },
+              { id: 'aadhar', label: 'Aadhaar Card Upload', desc: 'Proof of Identity and Address', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_Aadhaar.pdf`, size: '2.4 MB' },
+              { id: 'bank', label: 'Bank Details Document', desc: 'Cancelled Cheque or Bank Statement', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_BankProof.pdf`, size: '1.8 MB' },
               { id: 'nominee', label: 'Nominee ID Proof', desc: 'ID Proof for Assigned Nominee', filename: 'Nominee_ID.pdf', size: '1.5 MB' },
-              { id: 'agreement', label: 'Agreement Document', desc: 'Signed Investment Agreement Contract', filename: `${client.name.replace(/\s/g, '_')}_Agreement.pdf`, size: '3.1 MB' }
+              { id: 'agreement', label: 'Agreement Document', desc: 'Signed Investment Agreement Contract', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_Agreement.pdf`, size: '3.1 MB' }
             ].map((doc, idx) => (
               <div key={idx} className="kfpl-detail-info-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '20px', minHeight: '160px', position: 'relative' }}>
                 <div>
@@ -915,7 +964,7 @@ export default function ClientDetail() {
                   <button 
                     className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm" 
                     style={{ flex: 1, fontSize: '0.78rem', padding: '6px 0' }}
-                    onClick={() => setViewingDoc({ ...doc, investorName: client.name, status: 'Verified', uploadedAt: new Date(client.dateOfJoining).toLocaleDateString('en-GB') })}
+                    onClick={() => setViewingDoc({ ...doc, investorName: client.name, status: 'Verified', uploadedAt: formatDate(client.dateOfJoining) })}
                   >
                     View Document
                   </button>
@@ -1032,6 +1081,7 @@ export default function ClientDetail() {
         </div>,
         document.body
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
