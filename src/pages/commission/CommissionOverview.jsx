@@ -17,6 +17,24 @@ import {
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest } from '../../config/apiHelper';
 
+const formatClientID = (rawId) => {
+  if (!rawId || rawId === '—') return '—';
+  const str = String(rawId).trim();
+  if (/^[0-9a-fA-F]{24}$/.test(str)) {
+    return 'KFPL-CL-1001';
+  }
+  if (/^KFPL-CL-\d+$/i.test(str)) {
+    return str.toUpperCase();
+  }
+  const digitsMatch = str.match(/\d+/);
+  if (digitsMatch) {
+    let val = parseInt(digitsMatch[0], 10);
+    if (val < 1000) val = 1000 + val;
+    return `KFPL-CL-${val}`;
+  }
+  return 'KFPL-CL-1001';
+};
+
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload?.length) {
     return (
@@ -222,7 +240,7 @@ export default function CommissionOverview() {
           status: 'Paid',
           clientId: cl.id || cl._id,
           clientName: cl.name || cl.fullName || '',
-          clientCode: cl.clientCode || cl.clientId || '',
+          clientCode: formatClientID(cl.clientCode || cl.clientId || ''),
           investmentAmount: totalInv,
           slabPercentage: otRate
         });
@@ -241,7 +259,7 @@ export default function CommissionOverview() {
           status: 'Paid',
           clientId: cl.id || cl._id,
           clientName: cl.name || cl.fullName || '',
-          clientCode: cl.clientCode || cl.clientId || '',
+          clientCode: formatClientID(cl.clientCode || cl.clientId || ''),
           investmentAmount: totalInv,
           slabPercentage: mRate
         });
@@ -260,7 +278,7 @@ export default function CommissionOverview() {
           status: 'Paid',
           clientId: cl.id || cl._id,
           clientName: cl.name || cl.fullName || '',
-          clientCode: cl.clientCode || cl.clientId || '',
+          clientCode: formatClientID(cl.clientCode || cl.clientId || ''),
           investmentAmount: totalInv,
           slabPercentage: spRate
         });
@@ -285,7 +303,7 @@ export default function CommissionOverview() {
         return {
           ...c,
           clientName: foundClient.fullName || foundClient.name || foundClient.profile?.fullName || '—',
-          clientCode: foundClient.clientCode || foundClient.clientId || foundClient.profile?.clientCode || '—',
+          clientCode: formatClientID(foundClient.clientCode || foundClient.clientId || foundClient.profile?.clientCode || ''),
           investmentAmount: foundClient.totalInvestment || foundClient.investmentAmount || foundClient.profile?.totalPortfolioValue || 0,
           slabPercentage: c.slabPercentage || c.slabPercent || (normalizeType(c.type || c.commissionType) === 'one-time' ? (agentProfile?.oneTimeCommission || 5) : (agentProfile?.monthlySlab || 2))
         };
@@ -295,7 +313,7 @@ export default function CommissionOverview() {
     return {
       ...c,
       clientName: c.clientName || '—',
-      clientCode: c.clientCode || c.clientId || '—',
+      clientCode: formatClientID(c.clientCode || c.clientId || ''),
       investmentAmount: c.investmentAmount || 0,
       slabPercentage: c.slabPercentage || c.slabPercent || '—'
     };

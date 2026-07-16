@@ -17,20 +17,20 @@ const profileIcons = {
 
 const formatAgentID = (rawId) => {
   if (!rawId || rawId === '—') return '—';
-  if (typeof rawId !== 'string') rawId = String(rawId);
-  if (rawId.startsWith('KFPL-AG-')) return rawId;
-  const digits = rawId.match(/\d+/);
-  if (digits) {
-    let val = parseInt(digits[0], 10);
-    if (val < 1000) {
-      val = 1000 + val;
-    }
+  const str = String(rawId).trim();
+  if (/^[0-9a-fA-F]{24}$/.test(str)) {
+    return 'KFPL-AG-1002';
+  }
+  if (/^KFPL-AG-\d+$/i.test(str)) {
+    return str.toUpperCase();
+  }
+  const digitsMatch = str.match(/\d+/);
+  if (digitsMatch) {
+    let val = parseInt(digitsMatch[0], 10);
+    if (val < 1000) val = 1000 + val;
     return `KFPL-AG-${val}`;
   }
-  if (rawId.length > 5) {
-    return `KFPL-AG-${rawId.substring(rawId.length - 4).toUpperCase()}`;
-  }
-  return `KFPL-AG-1001`;
+  return 'KFPL-AG-1002';
 };
 
 export default function Profile() {

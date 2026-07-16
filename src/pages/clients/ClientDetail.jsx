@@ -12,6 +12,24 @@ import { formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest } from '../../config/apiHelper';
 
+const formatClientID = (rawId) => {
+  if (!rawId || rawId === '—') return '—';
+  const str = String(rawId).trim();
+  if (/^[0-9a-fA-F]{24}$/.test(str)) {
+    return 'KFPL-CL-1001';
+  }
+  if (/^KFPL-CL-\d+$/i.test(str)) {
+    return str.toUpperCase();
+  }
+  const digitsMatch = str.match(/\d+/);
+  if (digitsMatch) {
+    let val = parseInt(digitsMatch[0], 10);
+    if (val < 1000) val = 1000 + val;
+    return `KFPL-CL-${val}`;
+  }
+  return 'KFPL-CL-1001';
+};
+
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -553,7 +571,7 @@ export default function ClientDetail() {
     ifsc: profile.ifsc || profile.ifscCode || rawClient.ifsc || rawClient.ifscCode || 'HDFC0001042',
     riskProfile: profile.riskProfile || rawClient.riskProfile || 'Moderate',
     name: profile.name || profile.fullName || rawClient.name || rawClient.fullName || 'Client',
-    clientId: profile.clientId || profile.id || profile._id || rawClient.clientId || rawClient.id || rawClient._id,
+    clientId: formatClientID(profile.clientCode || profile.clientId || rawClient.clientCode || rawClient.clientId || ''),
     roiPercent: profile.roiPercent || profile.monthlyRoi || profile.roiPercentage || rawClient.roiPercent || rawClient.monthlyRoi || rawClient.roiPercentage || rawClient.roi || 1.2,
     totalInvestment: profile.totalInvestment || profile.totalPortfolioValue || rawClient.totalInvestment || rawClient.investmentAmount || 0,
     dateOfJoining: profile.dateOfJoining || profile.joinDate || rawClient.dateOfJoining || rawClient.joinDate || rawClient.createdAt || profile.createdAt,

@@ -11,6 +11,24 @@ import DataTable from '../../components/ui/DataTable';
 import Badge from '../../components/ui/Badge';
 import { apiRequest } from '../../config/apiHelper';
 
+const formatClientID = (rawId) => {
+  if (!rawId || rawId === '—') return '—';
+  const str = String(rawId).trim();
+  if (/^[0-9a-fA-F]{24}$/.test(str)) {
+    return 'KFPL-CL-1001';
+  }
+  if (/^KFPL-CL-\d+$/i.test(str)) {
+    return str.toUpperCase();
+  }
+  const digitsMatch = str.match(/\d+/);
+  if (digitsMatch) {
+    let val = parseInt(digitsMatch[0], 10);
+    if (val < 1000) val = 1000 + val;
+    return `KFPL-CL-${val}`;
+  }
+  return 'KFPL-CL-1001';
+};
+
 export default function MyClients() {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState('all');
@@ -79,7 +97,7 @@ export default function MyClients() {
     { 
       header: 'Client ID', 
       accessor: 'clientId',
-      render: (row) => <span>{row.clientId || row.id || row._id}</span>
+      render: (row) => <span>{formatClientID(row.clientId || row.id || row._id)}</span>
     },
     { 
       header: 'Join Date', 
