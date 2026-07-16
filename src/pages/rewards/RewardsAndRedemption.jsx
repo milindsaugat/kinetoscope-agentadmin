@@ -25,7 +25,6 @@ export default function RewardsAndRedemption() {
   const [submittingClaim, setSubmittingClaim] = useState(false);
 
   const fetchRewards = async () => {
-    setLoading(true);
     try {
       const [rewardsRes, clientsRes, claimsRes] = await Promise.all([
         apiRequest('/api/agent/rewards').catch(() => null),
@@ -105,13 +104,25 @@ export default function RewardsAndRedemption() {
         };
       });
 
+      let finalRewards = rewardsList;
+      let finalHistory = rewardsHistory;
+
       if (mapped.length === 0) {
         setRewards(rewardsList);
         setHistory(rewardsHistory);
       } else {
-        setRewards(mapped);
-        setHistory(hist.length > 0 ? hist : rewardsHistory);
+        finalRewards = mapped;
+        finalHistory = hist.length > 0 ? hist : rewardsHistory;
+        setRewards(finalRewards);
+        setHistory(finalHistory);
       }
+
+      // Save to SWR cache
+      localStorage.setItem('kfpl_agent_rewards_cache', JSON.stringify({
+        rewards: finalRewards,
+        history: finalHistory
+      }));
+
     } catch (err) {
       console.error('Failed to load rewards:', err);
       setRewards(rewardsList);
@@ -122,6 +133,18 @@ export default function RewardsAndRedemption() {
   };
 
   useEffect(() => {
+    // --- SWR Cache Initialization for Instant Load (0ms) ---
+    try {
+      const cacheData = localStorage.getItem('kfpl_agent_rewards_cache');
+      if (cacheData) {
+        const parsed = JSON.parse(cacheData);
+        if (parsed.rewards) setRewards(parsed.rewards);
+        if (parsed.history) setHistory(parsed.history);
+        setLoading(false);
+      }
+    } catch (e) {
+      console.warn('Failed to parse rewards cache:', e);
+    }
     fetchRewards();
   }, []);
 

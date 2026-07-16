@@ -40,6 +40,19 @@ export default function Profile() {
   const [stats, setStats] = useState({ commissionPaid: 0, commissionPending: 0 });
 
   useEffect(() => {
+    // --- SWR Cache Initialization for Instant Load (0ms) ---
+    try {
+      const cacheData = localStorage.getItem('kfpl_agent_profile_cache');
+      if (cacheData) {
+        const parsed = JSON.parse(cacheData);
+        if (parsed.profile) setProfile(parsed.profile);
+        if (parsed.stats) setStats(parsed.stats);
+        setLoading(false);
+      }
+    } catch (e) {
+      console.warn('Failed to parse profile cache:', e);
+    }
+
     const fetchProfile = async () => {
       try {
         const [profRes, clientsRes] = await Promise.all([
@@ -149,10 +162,18 @@ export default function Profile() {
           dynamicCommissionPaid = totalInv * 0.02;
         }
 
-        setStats({
+        const freshStats = {
           commissionPaid: dynamicCommissionPaid,
           commissionPending: 0,
-        });
+        };
+        setStats(freshStats);
+
+        // Save fresh values to cache
+        localStorage.setItem('kfpl_agent_profile_cache', JSON.stringify({
+          profile: rawProfile,
+          stats: freshStats
+        }));
+
       } catch (err) {
         console.error('Failed to load profile:', err);
         toast('Failed to load agent profile', 'error', 'Error');

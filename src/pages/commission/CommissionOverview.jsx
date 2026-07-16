@@ -82,8 +82,21 @@ export default function CommissionOverview() {
   const [odometerVisible, setOdometerVisible] = useState(false);
 
   useEffect(() => {
+    // --- SWR Cache Initialization for Instant Load (0ms) ---
+    try {
+      const cacheData = localStorage.getItem('kfpl_agent_commission_cache');
+      if (cacheData) {
+        const parsed = JSON.parse(cacheData);
+        if (parsed.commissions) setCommissions(parsed.commissions);
+        if (parsed.clients) setClients(parsed.clients);
+        if (parsed.agentProfile) setAgentProfile(parsed.agentProfile);
+        setLoading(false);
+      }
+    } catch (e) {
+      console.warn('Failed to parse commission cache:', e);
+    }
+
     const fetchData = async () => {
-      setLoading(true);
       try {
         const [commResponse, clientsResponse, profileResponse] = await Promise.all([
           apiRequest('/api/agent/commissions'),
@@ -104,7 +117,8 @@ export default function CommissionOverview() {
           if (res.clients && Array.isArray(res.clients)) return res.clients;
           return [];
         };
-        setClients(extractClients(clientsResponse));
+        const resolvedClients = extractClients(clientsResponse);
+        setClients(resolvedClients);
 
         const extractProfile = (res) => {
           if (!res) return null;
@@ -114,7 +128,16 @@ export default function CommissionOverview() {
           }
           return data.profile || data.agent || data;
         };
-        setAgentProfile(extractProfile(profileResponse));
+        const resolvedProfile = extractProfile(profileResponse);
+        setAgentProfile(resolvedProfile);
+
+        // Save fresh values to SWR cache
+        localStorage.setItem('kfpl_agent_commission_cache', JSON.stringify({
+          commissions: list,
+          clients: resolvedClients,
+          agentProfile: resolvedProfile
+        }));
+
       } catch (err) {
         console.error('Failed to load commissions data:', err);
         setCommissions([]);

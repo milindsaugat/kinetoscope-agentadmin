@@ -19,6 +19,17 @@ export default function MyClients() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // --- SWR Cache Initialization for Instant Load (0ms) ---
+    try {
+      const cacheData = localStorage.getItem('kfpl_agent_clients_cache');
+      if (cacheData) {
+        setClients(JSON.parse(cacheData));
+        setLoading(false);
+      }
+    } catch (e) {
+      console.warn('Failed to parse clients cache:', e);
+    }
+
     const fetchClients = async () => {
       try {
         const response = await apiRequest('/api/agent/clients');
@@ -34,6 +45,7 @@ export default function MyClients() {
         };
         const list = extractClients(response);
         setClients(list);
+        localStorage.setItem('kfpl_agent_clients_cache', JSON.stringify(list));
       } catch (err) {
         console.error('Failed to load clients:', err);
       } finally {
