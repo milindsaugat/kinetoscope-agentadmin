@@ -42,9 +42,9 @@ export default function Profile() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const [profRes, dashRes] = await Promise.all([
+        const [profRes, clientsRes] = await Promise.all([
           apiRequest('/api/agent/profile'),
-          apiRequest('/api/agent/dashboard').catch(() => null)
+          apiRequest('/api/agent/clients').catch(() => null)
         ]);
 
         const extractProfile = (res) => {
@@ -132,12 +132,27 @@ export default function Profile() {
         const rawProfile = extractProfile(profRes);
         setProfile(rawProfile);
 
-        if (dashRes) {
-          setStats({
-            commissionPaid: dashRes.commissionPaid ?? 0,
-            commissionPending: dashRes.commissionPending ?? 0,
-          });
+        let dynamicCommissionPaid = 0;
+        if (clientsRes) {
+          const extractClients = (res) => {
+            if (!res) return [];
+            if (Array.isArray(res)) return res;
+            if (res.data) {
+              if (Array.isArray(res.data)) return res.data;
+              if (res.data.clients && Array.isArray(res.data.clients)) return res.data.clients;
+            }
+            if (res.clients && Array.isArray(res.clients)) return res.clients;
+            return [];
+          };
+          const resolvedClients = extractClients(clientsRes);
+          const totalInv = resolvedClients.reduce((sum, c) => sum + (c.totalInvestment || c.investmentAmount || 0), 0);
+          dynamicCommissionPaid = totalInv * 0.02;
         }
+
+        setStats({
+          commissionPaid: dynamicCommissionPaid,
+          commissionPending: 0,
+        });
       } catch (err) {
         console.error('Failed to load profile:', err);
         toast('Failed to load agent profile', 'error', 'Error');

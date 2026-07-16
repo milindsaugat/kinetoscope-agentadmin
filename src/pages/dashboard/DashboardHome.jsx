@@ -66,55 +66,55 @@ export default function DashboardHome() {
   useEffect(() => {
     const authData = localStorage.getItem('kfpl_agent_auth');
     let isDemo = false;
+    let currentLocalName = 'Agent';
     if (authData) {
       try {
         const parsed = JSON.parse(authData);
-        const rawName = parsed.agent?.name || parsed.agent?.fullName || 'Agent';
-        setAgentName(rawName.split(' ')[0]);
-        const email = (parsed.agent?.email || parsed.user?.email || '').toLowerCase().trim();
+        const agentObj = parsed.agent || parsed.user || {};
+        currentLocalName = agentObj.name || agentObj.fullName || 'Agent';
+        setAgentName(currentLocalName.split(' ')[0]);
+        const email = (agentObj.email || parsed.user?.email || '').toLowerCase().trim();
         isDemo = email === 'rajesh.sharma@mail.com' || email === 'karan.malhotra@mail.com' || email === 'neha.kapoor@mail.com';
       } catch (e) {
-        console.error('Failed to parse agent auth:', e);
+        // Safe to ignore if JSON.parse fails initially
       }
+    }
+
+    // --- SWR Cache Initialization for Instant Load (0ms) ---
+    try {
+      const cacheData = localStorage.getItem('kfpl_dashboard_cache');
+      if (cacheData) {
+        const parsed = JSON.parse(cacheData);
+        if (parsed.stats) setStats(parsed.stats);
+        if (parsed.clients) setClients(parsed.clients);
+        if (parsed.agentName) setAgentName(parsed.agentName);
+        setLoading(false);
+      }
+    } catch (e) {
+      console.warn('Failed to parse dashboard cache:', e);
     }
 
     const loadDashboardData = async () => {
       try {
-        const [dashRes, clientsRes] = await Promise.all([
+        // Parallelized fetch for all 3 endpoints concurrently
+        const [profRes, dashRes, clientsRes] = await Promise.all([
+          apiRequest('/api/agent/profile').catch(() => null),
           apiRequest('/api/agent/dashboard').catch(err => { console.error(err); return null; }),
           apiRequest('/api/agent/clients').catch(err => { console.error(err); return null; })
         ]);
 
-        if (dashRes && isDemo) {
-          setStats({
-            totalClients: dashRes.totalClients ?? 0,
-            activeInvestments: dashRes.activeInvestments ?? 0,
-            thisMonthCommission: dashRes.thisMonthCommission ?? dashRes.monthlyCommission ?? 0,
-            commissionPaid: dashRes.commissionPaid ?? 0,
-            commissionPending: dashRes.commissionPending ?? 0,
-            rewardsEarned: dashRes.rewardsEarned ?? 0,
-          });
-          if (dashRes.activities && Array.isArray(dashRes.activities)) {
-            setActivities(dashRes.activities);
+        let freshName = currentLocalName.split(' ')[0];
+        if (profRes) {
+          const profile = profRes.profile || profRes.agent || profRes.data || profRes;
+          const nameVal = profile.name || profile.fullName;
+          if (nameVal) {
+            freshName = nameVal.split(' ')[0];
+            setAgentName(freshName);
           }
-          if (dashRes.withdrawals && Array.isArray(dashRes.withdrawals)) {
-            setWithdrawals(dashRes.withdrawals);
-          }
-        } else {
-          // Force clean state for new agents
-          setStats({
-            totalClients: 0,
-            activeInvestments: 0,
-            thisMonthCommission: 0,
-            commissionPaid: 0,
-            commissionPending: 0,
-            rewardsEarned: 0,
-          });
-          setActivities([]);
-          setWithdrawals([]);
         }
 
-        if (clientsRes && isDemo) {
+        let resolvedClients = [];
+        if (clientsRes) {
           const extractClients = (res) => {
             if (!res) return [];
             if (Array.isArray(res)) return res;
@@ -125,10 +125,53 @@ export default function DashboardHome() {
             if (res.clients && Array.isArray(res.clients)) return res.clients;
             return [];
           };
-          setClients(extractClients(clientsRes));
-        } else {
-          setClients([]);
+          resolvedClients = extractClients(clientsRes);
+          setClients(resolvedClients);
         }
+
+        const totalInv = resolvedClients.reduce((sum, c) => sum + (c.totalInvestment || c.investmentAmount || 0), 0);
+        const dynamicCommissionPaid = totalInv * 0.02;
+
+        let newStats = {};
+        if (dashRes) {
+          const data = dashRes.data || dashRes;
+          const statsSource = data.stats || data.data?.stats || data.data || data;
+          newStats = {
+            totalClients: statsSource.totalClients ?? statsSource.clientsCount ?? statsSource.totalInvestors ?? data.totalClients ?? data.clientsCount ?? 0,
+            activeInvestments: statsSource.activeInvestments ?? statsSource.investmentsCount ?? statsSource.activeCount ?? data.activeInvestments ?? data.investmentsCount ?? 0,
+            thisMonthCommission: statsSource.thisMonthCommission ?? statsSource.monthlyCommission ?? statsSource.commissionThisMonth ?? data.thisMonthCommission ?? data.monthlyCommission ?? data.commissionThisMonth ?? 0,
+            commissionPaid: dynamicCommissionPaid,
+            commissionPending: 0,
+            rewardsEarned: statsSource.rewardsEarned ?? statsSource.totalRewards ?? data.rewardsEarned ?? data.totalRewards ?? 0,
+          };
+          setStats(newStats);
+
+          const rawActivities = data.activities || data.recentActivities || statsSource.activities || statsSource.recentActivities || [];
+          setActivities(Array.isArray(rawActivities) ? rawActivities : []);
+
+          const rawWithdrawals = data.withdrawals || data.withdrawalHistory || statsSource.withdrawals || statsSource.withdrawalHistory || [];
+          setWithdrawals(Array.isArray(rawWithdrawals) ? rawWithdrawals : []);
+        } else {
+          newStats = {
+            totalClients: resolvedClients.length,
+            activeInvestments: resolvedClients.length,
+            thisMonthCommission: 0,
+            commissionPaid: dynamicCommissionPaid,
+            commissionPending: 0,
+            rewardsEarned: 0,
+          };
+          setStats(newStats);
+          setActivities([]);
+          setWithdrawals([]);
+        }
+
+        // Save fresh details to cache
+        localStorage.setItem('kfpl_dashboard_cache', JSON.stringify({
+          stats: newStats,
+          clients: resolvedClients,
+          agentName: freshName
+        }));
+
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
       } finally {

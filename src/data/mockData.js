@@ -5,8 +5,14 @@
    ============================================================ */
 
 // ── Formatters ───────────────────────
-export const formatCurrency = (n) => '₹' + Number(n).toLocaleString('en-IN');
-export const formatNumber = (n) => Number(n).toLocaleString('en-IN');
+export const formatCurrency = (n) => {
+  if (n === undefined || n === null || isNaN(n)) return '₹0';
+  return '₹' + Number(n).toLocaleString('en-IN');
+};
+export const formatNumber = (n) => {
+  if (n === undefined || n === null || isNaN(n)) return '0';
+  return Number(n).toLocaleString('en-IN');
+};
 
 // ── Agent Profile ───────────────────────
 if (typeof window !== 'undefined') {

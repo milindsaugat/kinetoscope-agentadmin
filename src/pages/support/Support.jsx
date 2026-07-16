@@ -7,14 +7,14 @@
 import { agentProfile } from '../../data/mockData';
 
 export default function Support() {
-  const waLink = `https://wa.me/919999999999?text=Hi%20KFPL%20Support%2C%20I'm%20agent%20${encodeURIComponent(agentProfile.name)}%20(${encodeURIComponent(agentProfile.agentId)})`;
+  const waLink = `https://wa.me/919999999999?text=Hi%20Kinetoscope%20Support%2C%20I'm%20agent%20${encodeURIComponent(agentProfile.name)}%20(${encodeURIComponent(agentProfile.agentId)})`;
 
   return (
     <div className="kfpl-page" id="support-page">
       <div className="kfpl-page-header">
         <div className="kfpl-page-header-left">
           <h1 className="kfpl-page-title">Support</h1>
-          <p className="kfpl-page-subtitle">Contact the KFPL support desk for commission, client, and payout assistance.</p>
+          <p className="kfpl-page-subtitle">Contact the Kinetoscope support desk for commission, client, and payout assistance.</p>
         </div>
       </div>
 

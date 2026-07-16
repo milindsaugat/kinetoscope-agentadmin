@@ -63,7 +63,7 @@ export default function GrowWithKFPL() {
     <div className="kfpl-page" id="grow-page">
       <div className="kfpl-page-header">
         <div className="kfpl-page-header-left">
-          <h1 className="kfpl-page-title">Grow with KFPL</h1>
+          <h1 className="kfpl-page-title">Grow with Kinetoscope</h1>
           <p className="kfpl-page-subtitle">Browse active plans and estimate agent commission for client investments.</p>
         </div>
       </div>

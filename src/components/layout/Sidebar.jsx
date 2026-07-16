@@ -93,7 +93,7 @@ const navSections = [
   {
     title: 'Finance',
     items: [
-      { path: '/grow', icon: 'grow', label: 'Grow with KFPL' },
+      { path: '/grow', icon: 'grow', label: 'Grow with Kinetoscope' },
       { path: '/withdrawal', icon: 'withdrawal', label: 'Withdrawal' },
     ],
   },

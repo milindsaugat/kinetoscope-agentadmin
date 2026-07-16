@@ -108,7 +108,7 @@ export default function MyClients() {
     {
       header: 'Monthly ROI % Allocated',
       accessor: 'roiPercent',
-      render: (row) => `${row.roiPercent || row.monthlyRoi || 0}%`
+      render: (row) => `${row.roiPercent || row.monthlyRoi || row.roiPercentage || row.profile?.monthlyRoi || row.profile?.roiPercentage || row.roi || 0}%`
     },
     {
       header: 'Perks',
@@ -125,7 +125,7 @@ export default function MyClients() {
     {
       header: 'Commission Earned',
       accessor: 'commissionPaid',
-      render: (row) => <span className="font-semibold" style={{ color: 'var(--color-success)' }}>{formatCurrency(row.commissionPaid || 0)}</span>
+      render: (row) => <span className="font-semibold" style={{ color: 'var(--color-success)' }}>{formatCurrency((row.totalInvestment || row.investmentAmount || 0) * 0.02)}</span>
     },
     {
       header: 'Status',

@@ -13,7 +13,7 @@ const routeTitles = {
   '/clients': 'My Clients',
   '/commission': 'Commission',
   '/rewards': 'Rewards & Redemption',
-  '/grow': 'Grow with KFPL',
+  '/grow': 'Grow with Kinetoscope',
   '/withdrawal': 'Withdrawal',
   '/service-requests': 'Service Requests',
   '/support': 'Support',
