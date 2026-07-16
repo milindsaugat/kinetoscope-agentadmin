@@ -285,7 +285,21 @@ export default function Login() {
       try { list = JSON.parse(stored); } catch (e) { console.error(e); }
     }
     const nextId = list.length > 0 ? Math.max(...list.map(i => i.id || 0)) + 1 : 1;
-    const agentCode = backendCode || `KFPL-AG-${1000 + nextId}`;
+    const rawAgentCode = backendCode || `KFPL-AG-${1000 + nextId}`;
+    let agentCode = rawAgentCode;
+    if (rawAgentCode) {
+      const str = String(rawAgentCode).trim();
+      if (/^KFPL-AG-\d+$/i.test(str)) {
+        agentCode = str.toUpperCase();
+      } else {
+        const digitsMatch = str.match(/\d+/);
+        if (digitsMatch) {
+          let val = parseInt(digitsMatch[0], 10);
+          if (val < 1000) val = 1000 + val;
+          agentCode = `KFPL-AG-${val}`;
+        }
+      }
+    }
 
     const newAgentObj = {
       id: nextId,
