@@ -30,6 +30,7 @@ import RewardsAndRedemption from './pages/rewards/RewardsAndRedemption';
 
 // ── Grow with KFPL ───────────────────────
 import GrowWithKFPL from './pages/grow/GrowWithKFPL';
+import GrowDetail from './pages/grow/GrowDetail';
 
 // ── Withdrawal ───────────────────────
 import Withdrawal from './pages/withdrawal/Withdrawal';
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="commission" element={<CommissionOverview />} />
             <Route path="rewards" element={<RewardsAndRedemption />} />
             <Route path="grow" element={<GrowWithKFPL />} />
+            <Route path="grow/:id" element={<GrowDetail />} />
             <Route path="withdrawal" element={<Withdrawal />} />
             <Route path="service-requests" element={<ServiceRequests />} />
             <Route path="support" element={<Support />} />

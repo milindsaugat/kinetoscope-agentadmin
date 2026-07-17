@@ -306,4 +306,15 @@
   }
 }
 
+@media (max-width: 767px) {
+  .kfpl-media-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  .kfpl-media-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
 /* ============ END: responsive.css ============ */

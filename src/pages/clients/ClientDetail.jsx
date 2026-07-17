@@ -437,89 +437,188 @@ export default function ClientDetail() {
   const [loading, setLoading] = useState(true);
   const [viewingDoc, setViewingDoc] = useState(null);
   const [roiHistory, setRoiHistory] = useState([]);
+  const [investmentsData, setInvestmentsData] = useState([]);
+  const [perksData, setPerksData] = useState([]);
+  const [docsData, setDocsData] = useState([]);
+  const [verifiedDocs, setVerifiedDocs] = useState({});
 
   useEffect(() => {
+    // --- SWR Cache Initialization for Instant Load (0ms) ---
+    try {
+      const cacheKey = `kfpl_agent_client_detail_${id}`;
+      const cacheData = localStorage.getItem(cacheKey);
+      if (cacheData) {
+        const parsed = JSON.parse(cacheData);
+        if (parsed.rawClient) setRawClient(parsed.rawClient);
+        if (parsed.roiHistory) setRoiHistory(parsed.roiHistory);
+        if (parsed.investmentsData) setInvestmentsData(parsed.investmentsData);
+        if (parsed.perksData) setPerksData(parsed.perksData);
+        if (parsed.docsData) setDocsData(parsed.docsData);
+        if (parsed.verifiedDocs) setVerifiedDocs(parsed.verifiedDocs);
+        setLoading(false);
+      }
+    } catch (e) {
+      console.warn('Failed to parse client detail cache:', e);
+    }
+
     const fetchClient = async () => {
       try {
+        // Concurrently run ALL independent requests in a single Promise.all
+        const [singleRes, listRes, payoutsRes, superAdminClientRes] = await Promise.all([
+          apiRequest(`/api/agent/clients/${id}`).catch(() => null),
+          apiRequest('/api/agent/clients').catch(() => null),
+          apiRequest(`/api/super-admin/roi/payouts?status=All&recipientType=All`).catch(() => null),
+          apiRequest(`/api/super-admin/clients/${id}`).catch(() => null)
+        ]);
+
+        const extractClient = (res) => {
+          if (!res) return null;
+          if (res.client) return res.client;
+          if (res.data) {
+            if (res.data.client) return res.data.client;
+            return res.data;
+          }
+          return res;
+        };
+
+        const extractList = (res) => {
+          if (!res) return [];
+          if (Array.isArray(res)) return res;
+          if (res.data) {
+            if (Array.isArray(res.data)) return res.data;
+            if (res.data.clients && Array.isArray(res.data.clients)) return res.data.clients;
+          }
+          if (res.clients && Array.isArray(res.clients)) return res.clients;
+          return [];
+        };
+
+        // Use super-admin response as primary source (it has header/profile/summaryCards structure)
+        // Fall back to agent API response
         let clientObj = null;
-        try {
-          const response = await apiRequest(`/api/agent/clients/${id}`);
-          const extractClient = (res) => {
-            if (!res) return null;
-            if (res.client) return res.client;
-            if (res.data) {
-              if (res.data.client) return res.data.client;
-              return res.data;
-            }
-            return res;
+        let superAdminData = null;
+        if (superAdminClientRes) {
+          superAdminData = superAdminClientRes.data || superAdminClientRes;
+          // The super-admin response has { profile, header, summaryCards } structure
+          const saProfile = superAdminData.profile || superAdminData;
+          clientObj = {
+            ...superAdminData,
+            ...saProfile,
+            _id: saProfile._id || superAdminData._id || id,
+            _superAdminData: superAdminData, // keep raw reference
           };
-          clientObj = extractClient(response);
-        } catch (e) {
-          console.warn('Single client fetch failed, attempting list fallback:', e);
         }
 
         if (!clientObj || !(clientObj._id || clientObj.id)) {
-          // Fallback: Fetch all clients and search by ID
-          const listRes = await apiRequest('/api/agent/clients');
-          const extractList = (res) => {
-            if (!res) return [];
-            if (Array.isArray(res)) return res;
-            if (res.data) {
-              if (Array.isArray(res.data)) return res.data;
-              if (res.data.clients && Array.isArray(res.data.clients)) return res.data.clients;
-            }
-            if (res.clients && Array.isArray(res.clients)) return res.clients;
-            return [];
-          };
+          clientObj = extractClient(singleRes);
+        }
+        if (!clientObj || !(clientObj._id || clientObj.id)) {
           const list = extractList(listRes);
-          clientObj = list.find(c => (c._id || c.id) === id);
+          clientObj = list.find(c => (c._id || c.id) === id || c.clientId === id || c.clientCode === id);
+        }
+
+        if (!clientObj) {
+          throw new Error('Client object not found in list or detail response');
+        }
+
+        // Preserve the super-admin structured data for proper normalization
+        if (superAdminData) {
+          clientObj._superAdminData = superAdminData;
         }
 
         setRawClient(clientObj);
 
-        // Fetch client payouts or generate fallback history
-        if (clientObj) {
-          const profile = clientObj.profile || clientObj || {};
-          const roiPercent = profile.roiPercent || profile.monthlyRoi || profile.roiPercentage || clientObj.roiPercent || clientObj.monthlyRoi || clientObj.roiPercentage || clientObj.roi || 1.2;
-          const totalInvestment = profile.totalInvestment || profile.totalPortfolioValue || clientObj.totalInvestment || clientObj.investmentAmount || 0;
+        const profileId = clientObj.profile?._id || clientObj._id || clientObj.id;
+        const recipientUserId = clientObj.userId || clientObj._id || clientObj.id;
 
-          const monthlyROIVal = Math.round((totalInvestment * roiPercent) / 100);
-          const fallbackHistory = [
-            { id: 201, month: 'Jan 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-01-31' },
-            { id: 202, month: 'Feb 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-02-28' },
-            { id: 203, month: 'Mar 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-03-31' },
-            { id: 204, month: 'Apr 2026', amount: monthlyROIVal, status: 'pending', paidAt: null },
-            { id: 205, month: 'May 2026', amount: monthlyROIVal, status: 'pending', paidAt: null },
-          ];
+        // Concurrently run stage 2: investments, perks, and documents using profileId
+        const [investmentsRes, perksRes, docsRes] = await Promise.all([
+          apiRequest(`/api/super-admin/clients/${profileId}/investments`).catch(() => null),
+          apiRequest(`/api/super-admin/clients/${profileId}/perks`).catch(() => null),
+          apiRequest(`/api/super-admin/clients/${profileId}/documents`).catch(() => null)
+        ]);
 
-          let backendPayouts = null;
-          try {
-            const res = await apiRequest(`/api/super-admin/roi/payouts?status=All&recipientType=All`).catch(() => null);
-            if (res) {
-              const data = res.data || res;
-              const payoutsList = Array.isArray(data) ? data : (data.payouts || data.list || []);
-              // Filter payouts belonging to this client user/profile
-              backendPayouts = payoutsList.filter(p => {
-                const recId = p.recipientId || p.investorId || p.clientId || '';
-                return String(recId) === String(clientObj.userId || clientObj._id || clientObj.id);
-              });
-            }
-          } catch (e) {
-            console.warn('Failed to load real client payouts from super-admin:', e);
-          }
+        // Process ROI payouts list
+        let calculatedRoiHistory = [];
+        const profile = clientObj.profile || clientObj || {};
+        const roiPercent = profile.roiPercent || profile.monthlyRoi || profile.roiPercentage || clientObj.roiPercent || clientObj.monthlyRoi || clientObj.roiPercentage || clientObj.roi || 1.2;
+        const totalInvestment = profile.totalInvestment || profile.totalPortfolioValue || clientObj.totalInvestment || clientObj.investmentAmount || 0;
+        const monthlyROIVal = Math.round((totalInvestment * roiPercent) / 100);
 
-          if (Array.isArray(backendPayouts) && backendPayouts.length > 0) {
-            setRoiHistory(backendPayouts.map((p, idx) => ({
-              id: p._id || p.id || idx,
-              month: p.month || p.period || '—',
-              amount: p.amount || p.payoutAmount || 0,
-              status: p.status || 'pending',
-              paidAt: p.paidAt || p.date || p.createdAt || '—'
-            })));
-          } else {
-            setRoiHistory(fallbackHistory);
-          }
+        const fallbackHistory = [
+          { id: 201, month: 'Jan 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-01-31' },
+          { id: 202, month: 'Feb 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-02-28' },
+          { id: 203, month: 'Mar 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-03-31' },
+          { id: 204, month: 'Apr 2026', amount: monthlyROIVal, status: 'pending', paidAt: null },
+          { id: 205, month: 'May 2026', amount: monthlyROIVal, status: 'pending', paidAt: null },
+        ];
+
+        let backendPayouts = [];
+        if (payoutsRes) {
+          const data = payoutsRes.data || payoutsRes;
+          const payoutsList = Array.isArray(data) ? data : (data.payouts || data.list || []);
+          backendPayouts = payoutsList.filter(p => {
+            const recId = p.recipientId || p.investorId || p.clientId || '';
+            return String(recId) === String(recipientUserId);
+          });
         }
+
+        if (backendPayouts.length > 0) {
+          calculatedRoiHistory = backendPayouts.map((p, idx) => ({
+            id: p._id || p.id || idx,
+            month: p.month || p.period || '—',
+            amount: p.amount || p.payoutAmount || 0,
+            status: p.status || 'pending',
+            paidAt: p.paidAt || p.date || p.createdAt || '—'
+          }));
+        } else {
+          calculatedRoiHistory = fallbackHistory;
+        }
+        setRoiHistory(calculatedRoiHistory);
+
+        // Process Investments
+        let resolvedInvestments = [];
+        if (investmentsRes) {
+          const data = investmentsRes.data || investmentsRes;
+          resolvedInvestments = Array.isArray(data) ? data : (data.investments || []);
+        }
+        setInvestmentsData(resolvedInvestments);
+
+        // Process Perks
+        let resolvedPerks = [];
+        if (perksRes) {
+          const data = perksRes.data || perksRes;
+          resolvedPerks = Array.isArray(data) ? data : (data.perks || []);
+        }
+        setPerksData(resolvedPerks);
+
+        // Process Documents
+        let resolvedDocs = [];
+        const verifiedMap = {};
+        if (docsRes) {
+          const data = docsRes.data || docsRes;
+          resolvedDocs = data.documents || [];
+          resolvedDocs.forEach(doc => {
+            const label = doc.name || doc.label;
+            const s = (doc.status || '').toLowerCase();
+            const isDocVerified = s === 'verified' || s === 'approved' || doc.verified === true;
+            if (isDocVerified) {
+              verifiedMap[label] = true;
+            }
+          });
+        }
+        setDocsData(resolvedDocs);
+        setVerifiedDocs(verifiedMap);
+
+        // Save fresh values to SWR cache
+        localStorage.setItem(`kfpl_agent_client_detail_${id}`, JSON.stringify({
+          rawClient: clientObj,
+          roiHistory: calculatedRoiHistory,
+          investmentsData: resolvedInvestments,
+          perksData: resolvedPerks,
+          docsData: resolvedDocs,
+          verifiedDocs: verifiedMap
+        }));
+
       } catch (err) {
         console.error('Failed to load client details:', err);
         addToast('Failed to load client profile', 'error', 'Error');
@@ -557,33 +656,63 @@ export default function ClientDetail() {
     );
   }
 
-  // Fallbacks to enrich rawClient to match all Super Admin Investor fields
-  const profile = rawClient.profile || rawClient || {};
+  // Normalize client data using EXACT same logic as Super Admin InvestorDetail.jsx
+  // Priority: super-admin structured data (header/profile/summaryCards) > rawClient > '—'
+  const saData = rawClient._superAdminData || {};
+  const saProfile = saData.profile || rawClient.profile || rawClient || {};
+  const saHeader = saData.header || {};
+  const saSummary = saData.summaryCards || {};
+
+  // Determine KYC status (check verified docs)
+  let kycStatus = (saHeader.kycStatus || saSummary.kycStatus || saProfile.kycStatus || rawClient.kycStatus || 'PENDING').toUpperCase();
+  const allDocsVerified = docsData.length > 0 && docsData.every(doc => {
+    const s = (doc.status || '').toLowerCase();
+    return s === 'verified' || s === 'approved' || doc.verified === true;
+  });
+  if (allDocsVerified && docsData.length > 0) {
+    kycStatus = 'VERIFIED';
+  }
+
   const client = {
-    ...rawClient,
-    ...profile,
-    dob: profile.dob || rawClient.dob || '1987-10-14',
-    address: profile.address || rawClient.address || '42, Residency Road, Near Brigade Junction, Bangalore, Karnataka 560025',
-    kyc: profile.kyc || profile.kycStatus || rawClient.kycStatus || rawClient.kyc || 'Verified',
-    pan: profile.pan || profile.panNumber || rawClient.pan || rawClient.panNumber || 'ABCDE5678F',
-    bankName: profile.bankName || rawClient.bankName || 'HDFC Bank',
-    accountNo: profile.accountNo || profile.accountNumber || rawClient.accountNo || rawClient.accountNumber || 'XXXX9876',
-    ifsc: profile.ifsc || profile.ifscCode || rawClient.ifsc || rawClient.ifscCode || 'HDFC0001042',
-    riskProfile: profile.riskProfile || rawClient.riskProfile || 'Moderate',
-    name: profile.name || profile.fullName || rawClient.name || rawClient.fullName || 'Client',
-    clientId: formatClientID(profile.clientCode || profile.clientId || rawClient.clientCode || rawClient.clientId || ''),
-    roiPercent: profile.roiPercent || profile.monthlyRoi || profile.roiPercentage || rawClient.roiPercent || rawClient.monthlyRoi || rawClient.roiPercentage || rawClient.roi || 1.2,
-    totalInvestment: profile.totalInvestment || profile.totalPortfolioValue || rawClient.totalInvestment || rawClient.investmentAmount || 0,
-    dateOfJoining: profile.dateOfJoining || profile.joinDate || rawClient.dateOfJoining || rawClient.joinDate || rawClient.createdAt || profile.createdAt,
-    mobile: profile.mobile || profile.phone || rawClient.mobile || rawClient.phone || '—',
-    status: profile.status || rawClient.status || 'Active'
+    _id: rawClient._id || rawClient.id || id,
+    name: saHeader.clientName || saProfile.fullName || saProfile.name || rawClient.name || rawClient.fullName || '—',
+    clientId: formatClientID(saHeader.clientCode || saProfile.clientCode || saProfile.clientId || rawClient.clientCode || rawClient.clientId || ''),
+    email: saProfile.email || rawClient.email || '—',
+    dob: saProfile.dob ? new Date(saProfile.dob).toLocaleDateString('en-IN') : (rawClient.dob ? new Date(rawClient.dob).toLocaleDateString('en-IN') : '—'),
+    address: saProfile.address || rawClient.address || '—',
+    mobile: saProfile.phone || saProfile.mobile || rawClient.phone || rawClient.mobile || '—',
+    dateOfJoining: saData.joinDate || saProfile.joinDate || rawClient.dateOfJoining || rawClient.joinDate || rawClient.createdAt,
+    contractStartDate: saData.contractStartDate || saProfile.contractStartDate || rawClient.contractStartDate,
+    contractEndDate: saData.contractEndDate || saProfile.contractEndDate || rawClient.contractEndDate,
+    extendContractDate: saData.extendContractDate || saProfile.extendContractDate || saData.contractExtendedDate || saProfile.contractExtendedDate || rawClient.extendContractDate,
+    kyc: kycStatus,
+    riskProfile: saHeader.riskProfile || saProfile.riskProfile || rawClient.riskProfile || 'Conservative',
+    totalInvestment: saSummary.totalInvestment || saProfile.totalPortfolioValue || rawClient.totalInvestment || rawClient.investmentAmount || 0,
+    roiPercent: saSummary.monthlyRoi || saProfile.monthlyRoi || saProfile.roiPercentage || rawClient.roiPercent || rawClient.monthlyRoi || rawClient.roiPercentage || rawClient.roi || 1.2,
+    activeSegments: saSummary.activeInvestments || 0,
+    pan: saProfile.panNumber || saProfile.pan || rawClient.panNumber || rawClient.pan || '—',
+    aadhaar: saProfile.aadhaarNumber || saProfile.aadhaar || rawClient.aadhaarNumber || rawClient.aadhaar || '—',
+    residencyStatus: saProfile.residencyStatus || rawClient.residencyStatus || 'National (Domestic)',
+    bankName: saProfile.bankName || rawClient.bankName || '—',
+    accountNo: saProfile.accountNumber || saProfile.accountNo || rawClient.accountNumber || rawClient.accountNo || '—',
+    ifsc: saProfile.ifscCode || saProfile.ifsc || rawClient.ifscCode || rawClient.ifsc || '—',
+    nominee: {
+      name: saProfile.nomineeName || rawClient.nomineeName || '',
+      relation: saProfile.nomineeRelation || rawClient.nomineeRelation || '',
+      phone: saProfile.nomineePhone || rawClient.nomineePhone || '',
+      email: saProfile.nomineeEmail || rawClient.nomineeEmail || '',
+    },
+    status: (saHeader.status || saProfile.status || rawClient.status || 'active').toLowerCase(),
+    category: (saHeader.tier || saProfile.tier || 'silver').toLowerCase(),
   };
 
-  // Determine category tier
-  let category = 'silver';
-  if (client.totalInvestment >= 5000000) category = 'diamond';
-  else if (client.totalInvestment >= 3000000) category = 'platinum';
-  else if (client.totalInvestment >= 1500000) category = 'gold';
+  // Use API-provided tier, fall back to calculation from totalInvestment
+  let category = client.category || 'silver';
+  if (category === 'silver' && client.totalInvestment > 0) {
+    if (client.totalInvestment >= 5000000) category = 'diamond';
+    else if (client.totalInvestment >= 3000000) category = 'platinum';
+    else if (client.totalInvestment >= 1500000) category = 'gold';
+  }
 
   // Map risk level statuses
   const riskMap = {
@@ -592,8 +721,16 @@ export default function ClientDetail() {
     'Aggressive': 'rejected'   // red
   };
 
-  // Dynamically generate sub-investments from totalInvestment
-  const investments = client.investments || [
+  // Use investments from backend, or dynamically generate sub-investments if none found
+  const investments = (investmentsData && investmentsData.length > 0) ? investmentsData.map((inv, idx) => ({
+    id: inv._id || inv.id || idx,
+    segment: inv.segment || inv.movieName || inv.project || 'Film Making',
+    amount: inv.amount || inv.investmentAmount || 0,
+    roi: inv.roi || inv.roiPercentage || client.roiPercent || 1.2,
+    risk: inv.risk || inv.riskProfile || 'Medium',
+    date: inv.date || inv.investmentDate || client.dateOfJoining,
+    status: inv.status || 'Active'
+  })) : [
     { id: 101, segment: 'Film Making', amount: Math.round(client.totalInvestment * 0.6), date: client.dateOfJoining, roi: client.roiPercent, status: 'Active', risk: 'Medium' },
     { id: 102, segment: 'Distribution', amount: Math.round(client.totalInvestment * 0.4), date: client.dateOfJoining, roi: client.roiPercent, status: 'Active', risk: 'Low' },
   ];
@@ -633,8 +770,8 @@ export default function ClientDetail() {
               <h2 className="kfpl-detail-name" style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800 }}>{client.name}</h2>
               <div className="kfpl-detail-id" style={{ marginTop: '2px' }}>ID: {client.clientId}</div>
               <div className="kfpl-detail-meta" style={{ marginTop: '8px' }}>
-                <Badge status={category}>{category} Tier</Badge>
-                <Badge status={client.status === 'Active' ? 'active' : 'inactive'}>{client.status}</Badge>
+                <Badge status={category}>{category.toUpperCase()} TIER</Badge>
+                <Badge status={client.status === 'active' ? 'active' : 'inactive'}>{(client.status || 'active').toUpperCase()}</Badge>
                 <Badge status={riskMap[client.riskProfile]}>{client.riskProfile} Risk</Badge>
               </div>
             </div>
@@ -654,11 +791,11 @@ export default function ClientDetail() {
           </div>
           <div className="kfpl-detail-kpi-summary-card">
             <span className="kfpl-detail-kpi-summary-label">Active Segments</span>
-            <span className="kfpl-detail-kpi-summary-value">{investments.length} Segments</span>
+            <span className="kfpl-detail-kpi-summary-value">{client.activeSegments || investments.length} Segments</span>
           </div>
           <div className="kfpl-detail-kpi-summary-card">
             <span className="kfpl-detail-kpi-summary-label">Monthly ROI %</span>
-            <span className="kfpl-detail-kpi-summary-value" style={{ color: '#F59E0B' }}>{client.roiPercent}% Allocated</span>
+            <span className="kfpl-detail-kpi-summary-value" style={{ color: '#F59E0B' }}>{client.roiPercent}% Monthly</span>
           </div>
           <div className="kfpl-detail-kpi-summary-card">
             <span className="kfpl-detail-kpi-summary-label">KYC Verification</span>
@@ -731,6 +868,33 @@ export default function ClientDetail() {
                   </span>
                 </div>
               </div>
+              <div className="kfpl-detail-info-row-item">
+                <div className="kfpl-detail-info-item-icon">{infoIcons.calendar}</div>
+                <div className="kfpl-detail-info-item-content">
+                  <span className="kfpl-detail-info-item-label">Contract Start Date</span>
+                  <span className="kfpl-detail-info-item-value">
+                    {formatDate(client.contractStartDate)}
+                  </span>
+                </div>
+              </div>
+              <div className="kfpl-detail-info-row-item">
+                <div className="kfpl-detail-info-item-icon">{infoIcons.calendar}</div>
+                <div className="kfpl-detail-info-item-content">
+                  <span className="kfpl-detail-info-item-label">Contract End Date</span>
+                  <span className="kfpl-detail-info-item-value">
+                    {formatDate(client.contractEndDate)}
+                  </span>
+                </div>
+              </div>
+              <div className="kfpl-detail-info-row-item">
+                <div className="kfpl-detail-info-item-icon">{infoIcons.calendar}</div>
+                <div className="kfpl-detail-info-item-content">
+                  <span className="kfpl-detail-info-item-label">Contract Extended Date</span>
+                  <span className="kfpl-detail-info-item-value">
+                    {formatDate(client.extendContractDate)}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="kfpl-detail-info-card">
@@ -763,7 +927,7 @@ export default function ClientDetail() {
                 </div>
                 <div className="kfpl-detail-info-item-content">
                   <span className="kfpl-detail-info-item-label">Monthly ROI Rate</span>
-                  <span className="kfpl-detail-info-item-value" style={{ color: '#10B981', fontWeight: 800 }}>{client.roiPercent}% Allocated</span>
+                  <span className="kfpl-detail-info-item-value" style={{ color: '#10B981', fontWeight: 800 }}>{client.roiPercent}% Monthly</span>
                 </div>
               </div>
               <div className="kfpl-detail-info-row-item">
@@ -771,6 +935,20 @@ export default function ClientDetail() {
                 <div className="kfpl-detail-info-item-content">
                   <span className="kfpl-detail-info-item-label">PAN Card Number</span>
                   <span className="kfpl-detail-info-item-value">{client.pan}</span>
+                </div>
+              </div>
+              <div className="kfpl-detail-info-row-item">
+                <div className="kfpl-detail-info-item-icon">{infoIcons.fileText}</div>
+                <div className="kfpl-detail-info-item-content">
+                  <span className="kfpl-detail-info-item-label">Aadhaar Number</span>
+                  <span className="kfpl-detail-info-item-value">{client.aadhaar}</span>
+                </div>
+              </div>
+              <div className="kfpl-detail-info-row-item">
+                <div className="kfpl-detail-info-item-icon">{infoIcons.shield}</div>
+                <div className="kfpl-detail-info-item-content">
+                  <span className="kfpl-detail-info-item-label">Residency Status</span>
+                  <span className="kfpl-detail-info-item-value">{client.residencyStatus}</span>
                 </div>
               </div>
               <div className="kfpl-detail-info-row-item">

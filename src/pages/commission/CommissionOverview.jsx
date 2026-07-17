@@ -5,7 +5,150 @@
    ============================================================ */
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+
+function formatDateDMY(dateStr) {
+  if (!dateStr || dateStr === '—') return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function downloadStatementCSV(com, agentName) {
+  const rows = [
+    ['Commission Statement'],
+    ['Agent', agentName],
+    ['Period', com.month],
+    ['Date', formatDateDMY(com.date)],
+    ['Total Amount', com.amount],
+    ['Status', com.status],
+    [''],
+    ['Type', (String(com.type || '').toLowerCase().trim() === 'one-time' || String(com.type || '').toLowerCase().trim() === 'one-time onboarding' || String(com.type || '').toLowerCase().trim() === 'onetime' || String(com.type || '').toLowerCase().trim() === 'one time') ? 'One Time' : (String(com.type || '').toLowerCase().trim() === 'special' || String(com.type || '').toLowerCase().trim() === 'override' || String(com.type || '').toLowerCase().trim() === 'special override' ? 'Special' : 'Monthly')],
+    [''],
+    ['Client Name', 'Client ID', 'Investment', 'Rate %', 'Commission'],
+  ];
+  if (com.breakdown) {
+    com.breakdown.forEach(b => {
+      rows.push([b.clientName, b.clientId, b.investment, b.rate, b.amount]);
+    });
+  }
+  const csvContent = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `commission_${com.month ? com.month.replace(/\s/g, '_') : 'Statement'}_${agentName.replace(/\s/g, '_')}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadStatementPDF(com, agentName, agentClients = []) {
+  const dateStr = formatDateDMY(com.date);
+  const filteredBreakdown = com.breakdown || [];
+  const filteredTotal = filteredBreakdown.reduce((sum, b) => sum + b.amount, 0);
+
+  const rowsHtml = filteredBreakdown.map(b => {
+    const invDateStr = b.investmentDate || '';
+    const comType = String(com.type || '').toLowerCase().trim();
+    const isOneTime = comType === 'one-time' || comType === 'onetime' || comType === 'one time' || comType === 'one-time onboarding';
+    const isSpecial = comType === 'special' || comType === 'override' || comType === 'special override';
+    return `
+      <tr>
+        <td style="border: 1px solid #CFDDD5; padding: 10px; font-weight: 500;">${b.clientName}</td>
+        <td style="border: 1px solid #CFDDD5; padding: 10px; font-family: monospace;">${b.clientId}</td>
+        <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: center;">${invDateStr}</td>
+        <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: center;">
+          <span style="display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; ${isOneTime ? 'background: #DBEAFE; color: #1E40AF;' : isSpecial ? 'background: #FEF3C7; color: #92400E;' : 'background: #D1FAE5; color: #065F46;'}">${isOneTime ? 'One Time' : isSpecial ? 'Special' : 'Monthly'}</span>
+        </td>
+        <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: right; font-weight: 600;">${formatCurrency(b.investment)}</td>
+        <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: right;">${b.rate}%</td>
+        <td style="border: 1px solid #CFDDD5; padding: 10px; text-align: right; font-weight: bold; color: #059669;">${formatCurrency(b.amount)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const printWindow = window.open('', '_blank', 'width=900,height=700');
+  printWindow.document.write(`
+    <html>
+    <head>
+      <title>Commission Statement - ${com.month} - ${agentName}</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; line-height: 1.6; color: #11221A; background-color: #FFFFFF; padding: 40px; margin: 0; }
+        .header { margin-bottom: 30px; border-bottom: 3px solid #10B981; padding-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .title { font-size: 28px; font-weight: 800; color: #061D13; margin: 0; text-transform: uppercase; letter-spacing: -0.5px; }
+        .meta-info { margin-bottom: 30px; background-color: #F3F7F5; border: 1px solid #CFDDD5; border-radius: 12px; padding: 20px; }
+        .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .meta-item { display: flex; flex-direction: column; }
+        .meta-label { font-size: 11px; text-transform: uppercase; color: #4B6B5B; font-weight: 600; margin-bottom: 4px; }
+        .meta-value { font-size: 15px; font-weight: 700; color: #061D13; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #F3F7F5; color: #4B6B5B; font-weight: 700; text-transform: uppercase; font-size: 11px; padding: 12px 10px; border: 1px solid #CFDDD5; text-align: left; }
+        td { border: 1px solid #CFDDD5; padding: 12px 10px; font-size: 13px; }
+        .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #4B6B5B; border-top: 1px dashed #CFDDD5; padding-top: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div>
+          <h1 class="title">Commission Statement</h1>
+          <p style="margin: 4px 0 0; font-size: 12px; color: #4B6B5B; font-weight: 500;">Kinetoscope Film Production Pvt Ltd</p>
+        </div>
+        <div style="font-size: 12px; font-weight: 700; color: #059669; text-transform: uppercase; letter-spacing: 0.5px;">Official Statement</div>
+      </div>
+      <div class="meta-info">
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Agent Name</span>
+            <span class="meta-value">${agentName}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Statement Period</span>
+            <span class="meta-value">${com.month}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Payment Date</span>
+            <span class="meta-value">${dateStr}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Total Commission</span>
+            <span class="meta-value" style="color: #059669; font-size: 18px;">${formatCurrency(filteredTotal)}</span>
+          </div>
+        </div>
+      </div>
+      <h3>Client Details</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Client Name</th>
+            <th>Client ID</th>
+            <th style="text-align: center;">Investment Date</th>
+            <th style="text-align: center;">Type</th>
+            <th style="text-align: right;">Investment</th>
+            <th style="text-align: right;">Slab %</th>
+            <th style="text-align: right;">Commission</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+          <tr style="background-color: #F3F7F5; font-weight: bold;">
+            <td colSpan="6" style="text-align: right; border-top: 2px solid #CFDDD5;">Total payout</td>
+            <td style="text-align: right; color: #059669; border-top: 2px solid #CFDDD5; font-size: 15px;">${formatCurrency(filteredTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="footer">
+        This is a computer generated document and does not require a physical signature.
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
 import { 
   formatCurrency, 
   monthlyChartData,
@@ -96,8 +239,11 @@ export default function CommissionOverview() {
   const [commissions, setCommissions] = useState([]);
   const [clients, setClients] = useState([]);
   const [agentProfile, setAgentProfile] = useState(null);
+  const [apiSlabs, setApiSlabs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [odometerVisible, setOdometerVisible] = useState(false);
+  const [commissionSearch, setCommissionSearch] = useState('');
+  const [selectedCommission, setSelectedCommission] = useState(null);
 
   useEffect(() => {
     // --- SWR Cache Initialization for Instant Load (0ms) ---
@@ -108,6 +254,7 @@ export default function CommissionOverview() {
         if (parsed.commissions) setCommissions(parsed.commissions);
         if (parsed.clients) setClients(parsed.clients);
         if (parsed.agentProfile) setAgentProfile(parsed.agentProfile);
+        if (parsed.apiSlabs) setApiSlabs(parsed.apiSlabs);
         setLoading(false);
       }
     } catch (e) {
@@ -116,10 +263,11 @@ export default function CommissionOverview() {
 
     const fetchData = async () => {
       try {
-        const [commResponse, clientsResponse, profileResponse] = await Promise.all([
+        const [commResponse, clientsResponse, profileResponse, slabsResponse] = await Promise.all([
           apiRequest('/api/agent/commissions'),
           apiRequest('/api/agent/clients').catch(() => null),
-          apiRequest('/api/agent/profile').catch(() => null)
+          apiRequest('/api/agent/profile').catch(() => null),
+          apiRequest('/api/super-admin/commission-slabs').catch(() => null)
         ]);
 
         const list = Array.isArray(commResponse) ? commResponse : (commResponse.data?.commissions || commResponse.commissions || commResponse.history || (Array.isArray(commResponse.data) ? commResponse.data : []));
@@ -149,11 +297,36 @@ export default function CommissionOverview() {
         const resolvedProfile = extractProfile(profileResponse);
         setAgentProfile(resolvedProfile);
 
+        const extractArray = (res) => {
+          if (!res) return [];
+          if (Array.isArray(res)) return res;
+          if (res.data && Array.isArray(res.data)) return res.data;
+          for (const key in res) {
+            if (Array.isArray(res[key])) return res[key];
+            if (res[key] && typeof res[key] === 'object') {
+              const nested = extractArray(res[key]);
+              if (nested && nested.length > 0) return nested;
+            }
+          }
+          return [];
+        };
+        const rawSlabs = extractArray(slabsResponse);
+        const parsedSlabs = rawSlabs.map(s => ({
+          id: s._id || s.id,
+          minAmount: s.minAmount || 0,
+          maxAmount: (s.maxAmount === null || s.maxAmount === undefined || s.maxAmount === 999999999) ? 999999999 : s.maxAmount,
+          commissionPercentage: s.commissionPercentage !== undefined ? s.commissionPercentage : (s.percentage || 0),
+          percentage: s.commissionPercentage !== undefined ? s.commissionPercentage : (s.percentage || 0),
+          type: s.type || 'monthly'
+        }));
+        setApiSlabs(parsedSlabs);
+
         // Save fresh values to SWR cache
         localStorage.setItem('kfpl_agent_commission_cache', JSON.stringify({
           commissions: list,
           clients: resolvedClients,
-          agentProfile: resolvedProfile
+          agentProfile: resolvedProfile,
+          apiSlabs: parsedSlabs
         }));
 
       } catch (err) {
@@ -161,6 +334,7 @@ export default function CommissionOverview() {
         setCommissions([]);
         setClients([]);
         setAgentProfile(null);
+        setApiSlabs([]);
       } finally {
         setLoading(false);
       }
@@ -204,16 +378,41 @@ export default function CommissionOverview() {
   const email = getAgentEmail();
   const isDemo = email === 'rajesh.sharma@mail.com' || email === 'karan.malhotra@mail.com' || email === 'neha.kapoor@mail.com';
 
-  const getCalculatedCommissions = (prof, cls) => {
+  const getCalculatedCommissions = (prof, cls, slabs = []) => {
     const list = [];
     if (!prof || !cls || cls.length === 0) return [];
+
+    const getSlabRate = (typeNorm, amount) => {
+      const typeSlabs = slabs.filter(s => s.type === typeNorm);
+      const fallbackSlabs = typeNorm === 'one-time' 
+        ? [
+            { minAmount: 500000, maxAmount: 2500000, percentage: 2 },
+            { minAmount: 2500000, maxAmount: 5000000, percentage: 3 },
+            { minAmount: 5000000, maxAmount: 10000000, percentage: 4 },
+            { minAmount: 10000000, maxAmount: 999999999, percentage: 5 }
+          ]
+        : [
+            { minAmount: 0, maxAmount: 1500000, percentage: 0.5 },
+            { minAmount: 1500000, maxAmount: 2500000, percentage: 0.75 },
+            { minAmount: 2500000, maxAmount: 5000000, percentage: 1 },
+            { minAmount: 5000000, maxAmount: 10000000, percentage: 1.5 },
+            { minAmount: 10000000, maxAmount: 999999999, percentage: 2 }
+          ];
+      const activeSlabs = typeSlabs.length > 0 ? typeSlabs : fallbackSlabs;
+      const matched = activeSlabs.find(s => {
+        const max = s.maxAmount === null || s.maxAmount === undefined || s.maxAmount === 999999999 ? 999999999 : s.maxAmount;
+        const min = s.minAmount || 0;
+        return amount >= min && amount < max;
+      });
+      return matched ? (matched.commissionPercentage !== undefined ? matched.commissionPercentage : (matched.percentage || 0)) : 0;
+    };
 
     cls.forEach((cl, index) => {
       const totalInv = cl.totalInvestment || cl.investmentAmount || 0;
       if (totalInv <= 0) return;
 
-      const otRate = parseFloat(prof.oneTimeCommission || 0);
-      const mRate = parseFloat(prof.monthlySlab || prof.monthlySlabPercent || 0);
+      const otRate = getSlabRate('one-time', totalInv);
+      const mRate = getSlabRate('monthly', totalInv);
       const spRate = parseFloat(prof.specialCommission || 0);
 
       const joinDateStr = cl.dateOfJoining || cl.joinDate || cl.createdAt || '';
@@ -239,8 +438,8 @@ export default function CommissionOverview() {
           amount: otAmt,
           status: 'Paid',
           clientId: cl.id || cl._id,
-          clientName: cl.name || cl.fullName || '',
-          clientCode: formatClientID(cl.clientCode || cl.clientId || ''),
+          clientName: cl.fullName || cl.name || cl.profile?.fullName || cl.user?.name || '—',
+          clientCode: formatClientID(cl.clientCode || cl.clientId || cl.profile?.clientCode || cl.user?.clientCode || ''),
           investmentAmount: totalInv,
           slabPercentage: otRate
         });
@@ -249,20 +448,24 @@ export default function CommissionOverview() {
       // 2. Monthly Recurring Commission
       if (mRate > 0) {
         const mAmt = Math.round((totalInv * mRate) / 100);
-        list.push({
-          id: `calc-m-${cl.id || cl._id}-${index}`,
-          month: monthYearStr,
-          date: dateVal.toISOString().split('T')[0],
-          type: 'monthly',
-          commissionType: 'Monthly',
-          amount: mAmt,
-          status: 'Paid',
-          clientId: cl.id || cl._id,
-          clientName: cl.name || cl.fullName || '',
-          clientCode: formatClientID(cl.clientCode || cl.clientId || ''),
-          investmentAmount: totalInv,
-          slabPercentage: mRate
-        });
+        const nextMonthDate = new Date(dateVal.getFullYear(), dateVal.getMonth() + 1, 1);
+        if (nextMonthDate <= new Date()) {
+          const nextMonthYearStr = nextMonthDate.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+          list.push({
+            id: `calc-m-${cl.id || cl._id}-${index}`,
+            month: nextMonthYearStr,
+            date: nextMonthDate.toISOString().split('T')[0],
+            type: 'monthly',
+            commissionType: 'Monthly',
+            amount: mAmt,
+            status: 'Paid',
+            clientId: cl.id || cl._id,
+            clientName: cl.fullName || cl.name || cl.profile?.fullName || cl.user?.name || '—',
+            clientCode: formatClientID(cl.clientCode || cl.clientId || cl.profile?.clientCode || cl.user?.clientCode || ''),
+            investmentAmount: totalInv,
+            slabPercentage: mRate
+          });
+        }
       }
 
       // 3. Special Override Commission
@@ -277,8 +480,8 @@ export default function CommissionOverview() {
           amount: spAmt,
           status: 'Paid',
           clientId: cl.id || cl._id,
-          clientName: cl.name || cl.fullName || '',
-          clientCode: formatClientID(cl.clientCode || cl.clientId || ''),
+          clientName: cl.fullName || cl.name || cl.profile?.fullName || cl.user?.name || '—',
+          clientCode: formatClientID(cl.clientCode || cl.clientId || cl.profile?.clientCode || cl.user?.clientCode || ''),
           investmentAmount: totalInv,
           slabPercentage: spRate
         });
@@ -319,7 +522,7 @@ export default function CommissionOverview() {
     };
   });
 
-  const calculatedComms = getCalculatedCommissions(agentProfile, clients);
+  const calculatedComms = getCalculatedCommissions(agentProfile, clients, apiSlabs);
 
   const enrichedCommissions = [...dbEnriched];
   calculatedComms.forEach(calc => {
@@ -352,9 +555,83 @@ export default function CommissionOverview() {
   const totalSpecial = specialCommission.filter(s => s.status === 'Credited' || s.status === 'credited' || s.status === 'paid').reduce((s, c) => s + (c.amount || 0), 0);
   const totalEarned = totalOneTime + totalMonthly + totalSpecial;
 
+  const getCommissionBreakdown = (com) => {
+    if (com.breakdown && com.breakdown.length > 0) return com.breakdown;
+    const cid = com.clientId;
+    const clientObj = clients.find(c => String(c.id || c._id) === String(cid));
+    if (clientObj) {
+      const typeNormalized = String(com.type || com.commissionType || '').toLowerCase().trim();
+      const totalInv = clientObj.totalInvestment || clientObj.investmentAmount || 0;
+      let pct = com.slabPercentage !== undefined && com.slabPercentage !== '—' ? parseFloat(com.slabPercentage) : 0;
+      if (!pct) {
+        if (typeNormalized === 'one-time' || typeNormalized === 'onetime' || typeNormalized === 'one time' || typeNormalized === 'one-time onboarding') {
+          const typeSlabs = apiSlabs.filter(s => s.type === 'one-time');
+          const fallbackSlabs = [
+            { minAmount: 500000, maxAmount: 2500000, percentage: 2 },
+            { minAmount: 2500000, maxAmount: 5000000, percentage: 3 },
+            { minAmount: 5000000, maxAmount: 10000000, percentage: 4 },
+            { minAmount: 10000000, maxAmount: 999999999, percentage: 5 }
+          ];
+          const activeSlabs = typeSlabs.length > 0 ? typeSlabs : fallbackSlabs;
+          const matched = activeSlabs.find(s => {
+            const max = s.maxAmount === null || s.maxAmount === undefined || s.maxAmount === 999999999 ? 999999999 : s.maxAmount;
+            const min = s.minAmount || 0;
+            return totalInv >= min && totalInv < max;
+          });
+          pct = matched ? (matched.commissionPercentage !== undefined ? matched.commissionPercentage : (matched.percentage || 0)) : 0;
+        } else if (typeNormalized === 'monthly' || typeNormalized === 'recurring' || typeNormalized === 'monthly recurring') {
+          const typeSlabs = apiSlabs.filter(s => s.type === 'monthly');
+          const fallbackSlabs = [
+            { minAmount: 0, maxAmount: 1500000, percentage: 0.5 },
+            { minAmount: 1500000, maxAmount: 2500000, percentage: 0.75 },
+            { minAmount: 2500000, maxAmount: 5000000, percentage: 1 },
+            { minAmount: 5000000, maxAmount: 10000000, percentage: 1.5 },
+            { minAmount: 10000000, maxAmount: 999999999, percentage: 2 }
+          ];
+          const activeSlabs = typeSlabs.length > 0 ? typeSlabs : fallbackSlabs;
+          const matched = activeSlabs.find(s => {
+            const max = s.maxAmount === null || s.maxAmount === undefined || s.maxAmount === 999999999 ? 999999999 : s.maxAmount;
+            const min = s.minAmount || 0;
+            return totalInv >= min && totalInv < max;
+          });
+          pct = matched ? (matched.commissionPercentage !== undefined ? matched.commissionPercentage : (matched.percentage || 0)) : 0;
+        } else if (typeNormalized === 'special' || typeNormalized === 'override' || typeNormalized === 'special override') {
+          pct = agentProfile?.commissionSpecial || agentProfile?.profile?.specialCommission || 0;
+        }
+      }
+
+      return [{
+        clientName: clientObj.fullName || clientObj.name || clientObj.profile?.fullName || clientObj.user?.name || '—',
+        clientId: formatClientID(clientObj.clientCode || clientObj.clientId || clientObj.profile?.clientCode || clientObj.user?.clientCode || ''),
+        investment: totalInv,
+        rate: pct,
+        amount: com.amount,
+        investmentDate: clientObj.joinDate || '—'
+      }];
+    }
+    return [];
+  };
+
+  const filteredCommission = enrichedCommissions.filter(com => {
+    if (!com) return false;
+    const term = commissionSearch.toLowerCase().trim();
+    if (!term) return true;
+    const comType = String(com.type || com.commissionType || '').toLowerCase().trim();
+    const isOneTime = comType === 'one-time' || comType === 'onetime' || comType === 'one time' || comType === 'one-time onboarding';
+    const isSpecial = comType === 'special' || comType === 'override' || comType === 'special override';
+    const typeLabel = isOneTime ? 'One Time' : isSpecial ? 'Special' : 'Monthly';
+    return (
+      (com.month || '').toLowerCase().includes(term) ||
+      formatDateDMY(com.date).includes(term) ||
+      typeLabel.toLowerCase().includes(term) ||
+      String(com.amount).includes(term) ||
+      String(com.status || '').toLowerCase().includes(term)
+    );
+  });
+
   const commissionBreakdown = [
     { label: 'One-Time', value: totalOneTime, helper: `${oneTimeCommission.length} clients` },
-    { label: 'Monthly', value: totalMonthly, helper: 'Recurring payouts' },
+    { label: 'Monthly', value: totalMonthly, helper: 'Monthly slab payouts' },
     { label: 'Special', value: totalSpecial, helper: 'Credited bonus' },
   ];
 
@@ -458,9 +735,9 @@ export default function CommissionOverview() {
   return (
     <div className="kfpl-page kfpl-commission-page animate-fade-slide-up" id="commission-page">
       <div className="kfpl-page-header">
-        <div className="kfpl-page-header-left">
-          <h2 className="kfpl-page-title">Commission Overview</h2>
-          <p className="kfpl-page-subtitle">Track one-time, monthly recurring, and special commission payouts.</p>
+        <div className="kfpl-page-header-content">
+          <h1 className="kfpl-page-title">Commission Ledger</h1>
+          <p className="kfpl-page-subtitle">Track one-time, monthly slabs, and special commission payouts.</p>
         </div>
       </div>
 
@@ -484,169 +761,311 @@ export default function CommissionOverview() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="kfpl-tabs">
-        {[['one-time', 'One-Time'], ['monthly', 'Monthly'], ['special', 'Special']].map(([key, label]) => (
-          <button key={key} className={`kfpl-tab ${activeTab === key ? 'active' : ''}`} onClick={() => setActiveTab(key)}>{label}</button>
-        ))}
+      {/* Commission History Table */}
+      <div className="kfpl-panel-card" style={{ marginTop: 24 }}>
+        <div className="kfpl-panel-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Commission History</h3>
+            <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Click on any period to view detailed breakdown</p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div className="kfpl-search" style={{ maxWidth: '260px' }}>
+              <svg className="kfpl-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ width: 14, height: 14 }}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                type="text"
+                placeholder="Search commission..."
+                value={commissionSearch}
+                onChange={(e) => setCommissionSearch(e.target.value)}
+                style={{ paddingLeft: '32px', fontSize: '0.85rem' }}
+              />
+            </div>
+            <button
+              className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
+              onClick={() => {
+                enrichedCommissions.forEach(com => downloadStatementCSV({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent'));
+                toast('All CSV statements downloaded', 'success');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              CSV (All)
+            </button>
+            <button
+              className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
+              onClick={() => {
+                enrichedCommissions.forEach(com => downloadStatementPDF({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent', clients));
+                toast('All PDF statements generated', 'success');
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              PDF (All)
+            </button>
+          </div>
+        </div>
+        <div className="kfpl-table-wrapper">
+          <div className="kfpl-table-scroll">
+            <table className="kfpl-table">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'center' }}>Download Statement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCommission.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>No commission records found</td></tr>
+                ) : filteredCommission.map(com => (
+                  <tr key={com.id || com._id}>
+                    <td>
+                      <button
+                        onClick={() => setSelectedCommission(com)}
+                        style={{
+                          background: 'none', border: 'none', padding: '4px 8px',
+                          borderRadius: '6px', color: 'var(--color-gold-dark)',
+                          fontWeight: 600, cursor: 'pointer', textDecoration: 'underline',
+                          textUnderlineOffset: '3px', fontSize: '0.875rem',
+                        }}
+                        title="Click to view details"
+                      >
+                        {com.month || ((com.date) ? new Date(com.date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'Statement')}
+                      </button>
+                    </td>
+                    <td>{formatDateDMY(com.date)}</td>
+                    <td>
+                      {(() => {
+                        const comType = String(com.type || com.commissionType || '').toLowerCase().trim();
+                        const isOneTime = comType === 'one-time' || comType === 'onetime' || comType === 'one time' || comType === 'one-time onboarding';
+                        const isSpecial = comType === 'special' || comType === 'override' || comType === 'special override';
+                        return (
+                          <span className={`kfpl-badge kfpl-badge--${isOneTime ? 'info' : isSpecial ? 'gold' : 'success'}`}>
+                            {isOneTime ? 'One Time' : isSpecial ? 'Special' : 'Monthly'}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="font-semibold">{formatCurrency(com.amount)}</td>
+                    <td>
+                      <span className={`kfpl-badge kfpl-badge--${String(com.status).toLowerCase() === 'paid' ? 'success' : 'warning'}`}>
+                        {com.status}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'center' }}>
+                        <button
+                          className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
+                          onClick={() => {
+                            downloadStatementCSV({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent');
+                            toast(`Statement CSV downloaded for ${com.month}`, 'success');
+                          }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
+                          title="Download CSV"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="12" height="12">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/>
+                          </svg>
+                          CSV
+                        </button>
+                        <button
+                          className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
+                          onClick={() => {
+                            downloadStatementPDF({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent', clients);
+                            toast(`Statement PDF generated for ${com.month}`, 'success');
+                          }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
+                          title="Download PDF"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="12" height="12">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/>
+                          </svg>
+                          PDF
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      {/* ═══ ONE-TIME TAB ═══ */}
-      {activeTab === 'one-time' && (
-        <div className="kfpl-panel-card">
-          <div className="kfpl-panel-card-header">
-            <div>
-              <h3>One-Time Commission</h3>
-              <p>Client-wise payout ledger with credited dates</p>
-            </div>
-            <span className="kfpl-badge kfpl-badge--emerald">{oneTimeCommission.length} records</span>
-          </div>
-          <div className="kfpl-table-wrapper">
-            <div className="kfpl-table-scroll">
-              <table className="kfpl-table">
-                <thead>
-                  <tr>
-                    <th>Client Name</th>
-                    <th>Client ID</th>
-                    <th style={{ textAlign: 'right' }}>Investment Amount</th>
-                    <th>Slab %</th>
-                    <th style={{ textAlign: 'right' }}>Commission Earned</th>
-                    <th>Date Credited</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {oneTimeCommission.map((c, i) => (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{c.clientName}</td>
-                      <td className="cell-mono">{c.clientCode || c.clientId || '—'}</td>
-                      <td className="cell-amount">{formatCurrency(c.investmentAmount)}</td>
-                      <td><span className="kfpl-badge kfpl-badge--emerald">{c.slabPercentage || (c.slabPercent ? `${c.slabPercent}%` : '—')}</span></td>
-                      <td className="cell-amount cell-amount--positive">{formatCurrency(c.amount !== undefined ? c.amount : c.commissionEarned)}</td>
-                      <td>{formatDateSafe(c.date || c.dateCredited || c.dateOfJoining)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Commission Detail Modal ─── */}
+      {(() => {
+        if (!selectedCommission) return null;
+        const filteredBreakdown = getCommissionBreakdown(selectedCommission);
+        const filteredTotal = filteredBreakdown.length > 0 ? filteredBreakdown.reduce((sum, b) => sum + b.amount, 0) : (selectedCommission.amount || 0);
 
-      {/* ═══ MONTHLY TAB ═══ */}
-      {activeTab === 'monthly' && (
-        <>
-          {/* Monthly Table */}
-          <div className="kfpl-panel-card">
-            <div className="kfpl-panel-card-header">
-              <div>
-                <h3>Monthly Commission Ledger</h3>
-                <p>Recurring payout base and slab percentage</p>
-              </div>
-              <span className="kfpl-badge kfpl-badge--info">{monthlyCommission.length} months</span>
-            </div>
-            <div className="kfpl-table-wrapper">
-              <div className="kfpl-table-scroll">
-                <table className="kfpl-table">
-                  <thead>
-                    <tr>
-                      <th>Month</th>
-                      <th style={{ textAlign: 'right' }}>Investment Base</th>
-                      <th>Slab %</th>
-                      <th style={{ textAlign: 'right' }}>Commission Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {monthlyCommission.map((m, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 600 }}>{m.period || m.month}</td>
-                        <td className="cell-amount">{formatCurrency(m.investmentAmount !== undefined ? m.investmentAmount : m.investmentBase)}</td>
-                        <td><span className="kfpl-badge kfpl-badge--emerald">{m.slabPercentage || (m.slabPercent ? `${m.slabPercent}%` : '—')}</span></td>
-                        <td className="cell-amount cell-amount--positive">{formatCurrency(m.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          {/* Chart */}
-          <div className="kfpl-chart-wrapper" style={{ marginTop: 24 }}>
-            <div className="kfpl-chart-header">
-              <div>
-                <div className="kfpl-chart-title">Monthly Commission Trend</div>
-                <div className="kfpl-chart-subtitle">Last 12 months</div>
-              </div>
-              <div className="kfpl-chart-actions">
-                <button className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm" onClick={() => handleDownload('pdf')}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  PDF
-                </button>
-                <button className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm" onClick={() => handleDownload('xlsx')}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Excel
+        return createPortal(
+          <div
+            className="kfpl-modal-overlay"
+            onClick={() => setSelectedCommission(null)}
+          >
+            <div
+              className="kfpl-modal"
+              style={{ maxWidth: '640px' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="kfpl-modal-header">
+                <h3 className="kfpl-modal-title">Commission Statement</h3>
+                <button className="kfpl-modal-close" onClick={() => setSelectedCommission(null)} aria-label="Close modal">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
-            </div>
-            <div className="kfpl-chart-container">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyChartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-light)" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(16, 185, 129, 0.06)' }} />
-                  <Bar dataKey="amount" fill="var(--color-gold)" radius={[6, 6, 0, 0]} barSize={32} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </>
-      )}
 
-      {/* ═══ SPECIAL TAB ═══ */}
-      {activeTab === 'special' && (
-        <div className="kfpl-panel-card">
-          <div className="kfpl-panel-card-header">
-            <div>
-              <h3>Special Commission</h3>
-              <p>Manual bonus and adjustment history</p>
+              <div className="kfpl-modal-body">
+                <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                  {selectedCommission.month || ((selectedCommission.date) ? new Date(selectedCommission.date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'Statement')} — {agentProfile?.name || agentProfile?.fullName || 'Agent'} ({agentProfile?.agentId || '—'})
+                </p>
+
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px',
+                  marginBottom: '20px',
+                }}>
+                  <div style={{
+                    background: 'var(--color-surface-alt, #f8fafc)', borderRadius: '12px',
+                    padding: '16px', textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '6px' }}>Total Amount</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-gold-dark)' }}>{formatCurrency(filteredTotal)}</div>
+                  </div>
+                  <div style={{
+                    background: 'var(--color-surface-alt, #f8fafc)', borderRadius: '12px',
+                    padding: '16px', textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '6px' }}>Type</div>
+                    <div>
+                      {(() => {
+                        const comType = String(selectedCommission.type || selectedCommission.commissionType || '').toLowerCase().trim();
+                        const isOneTime = comType === 'one-time' || comType === 'onetime' || comType === 'one time' || comType === 'one-time onboarding';
+                        const isSpecial = comType === 'special' || comType === 'override' || comType === 'special override';
+                        return (
+                          <span className={`kfpl-badge kfpl-badge--${isOneTime ? 'info' : isSpecial ? 'gold' : 'success'}`}>
+                            {isOneTime ? 'One Time' : isSpecial ? 'Special' : 'Monthly'}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                  <div style={{
+                    background: 'var(--color-surface-alt, #f8fafc)', borderRadius: '12px',
+                    padding: '16px', textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '6px' }}>Date</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{formatDateDMY(selectedCommission.date)}</div>
+                  </div>
+                  <div style={{
+                    background: 'var(--color-surface-alt, #f8fafc)', borderRadius: '12px',
+                    padding: '16px', textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '6px' }}>Status</div>
+                    <div>
+                      <span className={`kfpl-badge kfpl-badge--${String(selectedCommission.status).toLowerCase() === 'paid' ? 'success' : 'warning'}`}>
+                        {selectedCommission.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredBreakdown.length > 0 && (
+                  <div>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 12px', color: 'var(--color-text-primary)' }}>
+                      Client-wise Breakdown
+                    </h4>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="kfpl-table" style={{ fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr>
+                            <th>Client</th>
+                            <th>Client ID</th>
+                            <th style={{ textAlign: 'center' }}>Investment Date</th>
+                            <th style={{ textAlign: 'center' }}>Type</th>
+                            <th style={{ textAlign: 'right' }}>Investment</th>
+                            <th style={{ textAlign: 'right' }}>Rate</th>
+                            <th style={{ textAlign: 'right' }}>Commission</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredBreakdown.map((b, i) => {
+                            const comType = String(selectedCommission.type || selectedCommission.commissionType || '').toLowerCase().trim();
+                            const isOneTime = comType === 'one-time' || comType === 'onetime' || comType === 'one time' || comType === 'one-time onboarding';
+                            const isSpecial = comType === 'special' || comType === 'override' || comType === 'special override';
+                            return (
+                              <tr key={i}>
+                                <td className="kfpl-table-cell-primary">{b.clientName}</td>
+                                <td>{b.clientId}</td>
+                                <td style={{ textAlign: 'center' }}>{b.investmentDate}</td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <span className={`kfpl-badge kfpl-badge--${isOneTime ? 'info' : isSpecial ? 'gold' : 'success'}`}>
+                                    {isOneTime ? 'One Time' : isSpecial ? 'Special' : 'Monthly'}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>{formatCurrency(b.investment)}</td>
+                                <td style={{ textAlign: 'right' }}>{b.rate}%</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-success)' }}>{formatCurrency(b.amount)}</td>
+                              </tr>
+                            );
+                          })}
+                          <tr style={{ background: 'var(--color-surface-alt, #f8fafc)', fontWeight: 700 }}>
+                            <td colSpan={6} style={{ textAlign: 'right' }}>Total</td>
+                            <td style={{ textAlign: 'right', color: 'var(--color-gold-dark)' }}>{formatCurrency(filteredTotal)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="kfpl-modal-footer">
+                <button
+                  className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
+                  onClick={() => setSelectedCommission(null)}
+                >Close</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
+                    onClick={() => {
+                      downloadStatementCSV({ ...selectedCommission, breakdown: filteredBreakdown }, agentProfile?.name || agentProfile?.fullName || 'Agent');
+                      toast('Statement CSV downloaded', 'success');
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    CSV
+                  </button>
+                  <button
+                    className="kfpl-btn kfpl-btn--primary kfpl-btn--sm"
+                    onClick={() => {
+                      downloadStatementPDF({ ...selectedCommission, breakdown: filteredBreakdown }, agentProfile?.name || agentProfile?.fullName || 'Agent', clients);
+                      toast('Statement PDF generated', 'success');
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    PDF
+                  </button>
+                </div>
+              </div>
             </div>
-            <span className="kfpl-badge kfpl-badge--warning">{specialCommission.length} entries</span>
-          </div>
-          <div className="kfpl-table-wrapper">
-            <div className="kfpl-table-scroll">
-              <table className="kfpl-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Reason</th>
-                    <th style={{ textAlign: 'right' }}>Amount</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {specialCommission.map((s, i) => (
-                    <tr key={s._id || s.id || i}>
-                      <td>{formatDateSafe(s.date)}</td>
-                      <td style={{ fontWeight: 500 }}>{s.remarks || s.reason || '—'}</td>
-                      <td className="cell-amount cell-amount--positive">{formatCurrency(s.amount)}</td>
-                      <td>
-                        <span className={`kfpl-badge ${
-                          ['credited', 'paid', 'success'].includes(String(s.status).toLowerCase()) 
-                            ? 'kfpl-badge--emerald' 
-                            : 'kfpl-badge--gold'
-                        }`}>
-                          {s.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        );
+      })()}
     </div>
   );
 }
