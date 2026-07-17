@@ -72,10 +72,14 @@ function downloadStatementPDF(com, agentName, agentClients = []) {
   }).join('');
 
   const printWindow = window.open('', '_blank', 'width=900,height=700');
+  if (!printWindow) {
+    alert('Popup blocked! Please allow popups for this site to generate and print statements.');
+    return;
+  }
   printWindow.document.write(`
     <html>
     <head>
-      <title>Commission Statement - ${com.month} - ${agentName}</title>
+      <title>Commission Statement - ${com.month || 'Statement'} - ${agentName}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         body { font-family: 'Inter', sans-serif; line-height: 1.6; color: #11221A; background-color: #FFFFFF; padding: 40px; margin: 0; }
@@ -92,7 +96,7 @@ function downloadStatementPDF(com, agentName, agentClients = []) {
         .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #4B6B5B; border-top: 1px dashed #CFDDD5; padding-top: 20px; }
       </style>
     </head>
-    <body>
+    <body onload="window.print();">
       <div class="header">
         <div>
           <h1 class="title">Commission Statement</h1>
@@ -164,7 +168,10 @@ const formatClientID = (rawId) => {
   if (!rawId || rawId === '—') return '—';
   const str = String(rawId).trim();
   if (/^[0-9a-fA-F]{24}$/.test(str)) {
-    return 'KFPL-CL-1001';
+    const lastFourHex = str.slice(-4);
+    const decimalVal = parseInt(lastFourHex, 16);
+    const num = 1000 + (decimalVal % 9000);
+    return `KFPL-CL-${num}`;
   }
   if (/^KFPL-CL-\d+$/i.test(str)) {
     return str.toUpperCase();
@@ -176,6 +183,27 @@ const formatClientID = (rawId) => {
     return `KFPL-CL-${val}`;
   }
   return 'KFPL-CL-1001';
+};
+
+const formatAgentID = (rawId) => {
+  if (!rawId || rawId === '—') return '—';
+  const str = String(rawId).trim();
+  if (/^[0-9a-fA-F]{24}$/.test(str)) {
+    const lastFourHex = str.slice(-4);
+    const decimalVal = parseInt(lastFourHex, 16);
+    const num = 1000 + (decimalVal % 9000);
+    return `KFPL-AG-${num}`;
+  }
+  if (/^KFPL-AG-\d+$/i.test(str)) {
+    return str.toUpperCase();
+  }
+  const digitsMatch = str.match(/\d+/);
+  if (digitsMatch) {
+    let val = parseInt(digitsMatch[0], 10);
+    if (val < 1000) val = 1000 + val;
+    return `KFPL-AG-${val}`;
+  }
+  return 'KFPL-AG-1002';
 };
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -493,34 +521,25 @@ export default function CommissionOverview() {
     return list;
   };
 
-  const dbEnriched = commissions.map(c => {
-    if (c.clientName && c.clientName !== '—' && c.clientName !== '-') {
-      return c;
-    }
-
+  const dbEnriched = commissions.filter(c => {
     const cid = c.clientId?._id || c.clientId?.id || c.clientId || c.client?._id || c.client?.id || c.client;
-    if (cid) {
-      const foundClient = clients.find(cl => {
-        const clid = cl.user?._id || cl.profile?.userId || cl._id || cl.id;
-        return String(clid) === String(cid);
-      });
-      if (foundClient) {
-        return {
-          ...c,
-          clientName: foundClient.fullName || foundClient.name || foundClient.profile?.fullName || '—',
-          clientCode: formatClientID(foundClient.clientCode || foundClient.clientId || foundClient.profile?.clientCode || ''),
-          investmentAmount: foundClient.totalInvestment || foundClient.investmentAmount || foundClient.profile?.totalPortfolioValue || 0,
-          slabPercentage: c.slabPercentage || c.slabPercent || (normalizeType(c.type || c.commissionType) === 'one-time' ? (agentProfile?.oneTimeCommission || 5) : (agentProfile?.monthlySlab || 2))
-        };
-      }
-    }
-
+    if (!cid) return false;
+    return clients.some(cl => {
+      const clid = cl._id || cl.id || cl.user?._id || cl.profile?.userId;
+      return String(clid) === String(cid);
+    });
+  }).map(c => {
+    const cid = c.clientId?._id || c.clientId?.id || c.clientId || c.client?._id || c.client?.id || c.client;
+    const foundClient = clients.find(cl => {
+      const clid = cl._id || cl.id || cl.user?._id || cl.profile?.userId;
+      return String(clid) === String(cid);
+    });
     return {
       ...c,
-      clientName: c.clientName || '—',
-      clientCode: formatClientID(c.clientCode || c.clientId || ''),
-      investmentAmount: c.investmentAmount || 0,
-      slabPercentage: c.slabPercentage || c.slabPercent || '—'
+      clientName: foundClient.fullName || foundClient.name || foundClient.profile?.fullName || '—',
+      clientCode: formatClientID(foundClient.clientCode || foundClient.clientId || foundClient.profile?.clientCode || ''),
+      investmentAmount: foundClient.totalInvestment || foundClient.investmentAmount || foundClient.profile?.totalPortfolioValue || 0,
+      slabPercentage: c.slabPercentage || c.slabPercent || (normalizeType(c.type || c.commissionType) === 'one-time' ? (agentProfile?.oneTimeCommission || 5) : (agentProfile?.monthlySlab || 2))
     };
   });
 
@@ -604,11 +623,11 @@ export default function CommissionOverview() {
 
       return [{
         clientName: clientObj.fullName || clientObj.name || clientObj.profile?.fullName || clientObj.user?.name || '—',
-        clientId: formatClientID(clientObj.clientCode || clientObj.clientId || clientObj.profile?.clientCode || clientObj.user?.clientCode || ''),
+        clientId: formatClientID(clientObj.clientCode || clientObj.clientId || clientObj.profile?.clientCode || clientObj.user?.clientCode || clientObj._id || clientObj.id || ''),
         investment: totalInv,
         rate: pct,
         amount: com.amount,
-        investmentDate: clientObj.joinDate || '—'
+        investmentDate: formatDateDMY(clientObj.joinDate || clientObj.dateOfJoining || '—')
       }];
     }
     return [];
@@ -783,32 +802,6 @@ export default function CommissionOverview() {
                 style={{ paddingLeft: '32px', fontSize: '0.85rem' }}
               />
             </div>
-            <button
-              className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
-              onClick={() => {
-                enrichedCommissions.forEach(com => downloadStatementCSV({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent'));
-                toast('All CSV statements downloaded', 'success');
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              CSV (All)
-            </button>
-            <button
-              className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
-              onClick={() => {
-                enrichedCommissions.forEach(com => downloadStatementPDF({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent', clients));
-                toast('All PDF statements generated', 'success');
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              PDF (All)
-            </button>
           </div>
         </div>
         <div className="kfpl-table-wrapper">
@@ -821,12 +814,11 @@ export default function CommissionOverview() {
                   <th>Type</th>
                   <th>Amount</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'center' }}>Download Statement</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCommission.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>No commission records found</td></tr>
+                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>No commission records found</td></tr>
                 ) : filteredCommission.map(com => (
                   <tr key={com.id || com._id}>
                     <td>
@@ -862,38 +854,6 @@ export default function CommissionOverview() {
                         {com.status}
                       </span>
                     </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'center' }}>
-                        <button
-                          className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
-                          onClick={() => {
-                            downloadStatementCSV({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent');
-                            toast(`Statement CSV downloaded for ${com.month}`, 'success');
-                          }}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
-                          title="Download CSV"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="12" height="12">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/>
-                          </svg>
-                          CSV
-                        </button>
-                        <button
-                          className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
-                          onClick={() => {
-                            downloadStatementPDF({ ...com, breakdown: getCommissionBreakdown(com) }, agentProfile?.name || agentProfile?.fullName || 'Agent', clients);
-                            toast(`Statement PDF generated for ${com.month}`, 'success');
-                          }}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
-                          title="Download PDF"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="12" height="12">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/>
-                          </svg>
-                          PDF
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -927,7 +887,7 @@ export default function CommissionOverview() {
 
               <div className="kfpl-modal-body">
                 <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                  {selectedCommission.month || ((selectedCommission.date) ? new Date(selectedCommission.date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'Statement')} — {agentProfile?.name || agentProfile?.fullName || 'Agent'} ({agentProfile?.agentId || '—'})
+                  {selectedCommission.month || ((selectedCommission.date) ? new Date(selectedCommission.date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'Statement')} — {selectedCommission.clientName || agentProfile?.name || agentProfile?.fullName || 'Agent'} ({selectedCommission.clientCode || formatAgentID(agentProfile?.agentCode || agentProfile?.agentId || agentProfile?.code || agentProfile?._id || agentProfile?.id || '') || '—'})
                 </p>
 
                 <div style={{
@@ -1034,34 +994,6 @@ export default function CommissionOverview() {
                   className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
                   onClick={() => setSelectedCommission(null)}
                 >Close</button>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="kfpl-btn kfpl-btn--secondary kfpl-btn--sm"
-                    onClick={() => {
-                      downloadStatementCSV({ ...selectedCommission, breakdown: filteredBreakdown }, agentProfile?.name || agentProfile?.fullName || 'Agent');
-                      toast('Statement CSV downloaded', 'success');
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    CSV
-                  </button>
-                  <button
-                    className="kfpl-btn kfpl-btn--primary kfpl-btn--sm"
-                    onClick={() => {
-                      downloadStatementPDF({ ...selectedCommission, breakdown: filteredBreakdown }, agentProfile?.name || agentProfile?.fullName || 'Agent', clients);
-                      toast('Statement PDF generated', 'success');
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="14" height="14">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    PDF
-                  </button>
-                </div>
               </div>
             </div>
           </div>,

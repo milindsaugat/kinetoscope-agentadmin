@@ -1304,7 +1304,7 @@ export default function ClientDetail() {
                     <tr key={inv._id || inv.id}>
                       <td className="kfpl-table-cell-primary">{inv.segment}</td>
                       <td className="font-semibold" style={{ color: '#10B981' }}>{formatCurrency(inv.investmentAmount || inv.amount || 0)}</td>
-                      <td>{inv.roiPercentage || inv.roi || client.roiPercent}%</td>
+                      <td>{client.roiPercent || inv.roiPercentage || inv.roi}%</td>
                       <td>
                         <Badge status={inv.riskPercentage > 50 ? 'rejected' : inv.riskPercentage > 25 ? 'pending' : 'active'}>
                           {inv.riskPercentage > 50 ? 'High' : inv.riskPercentage > 25 ? 'Medium' : 'Low'}
@@ -1338,35 +1338,7 @@ export default function ClientDetail() {
               <div className="kfpl-table-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>ROI Payout Statements</h3>
-                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Export CSV or print PDF statements for client's ROI returns</p>
-                </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <button
-                    className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
-                    onClick={() => {
-                      downloadAllClientROICSV(roiHistory, client);
-                      addToast('All CSV statements downloaded', 'success', 'Download Complete');
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="16" height="16">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    CSV (All)
-                  </button>
-                  <button
-                    className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
-                    onClick={() => {
-                      downloadAllClientROIPDF(roiHistory, client);
-                      addToast('All PDF statements generated', 'success', 'Download Complete');
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="16" height="16">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    PDF (All)
-                  </button>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Statement records for client's ROI returns</p>
                 </div>
               </div>
 
@@ -1379,13 +1351,12 @@ export default function ClientDetail() {
                       <th>Payout Amount</th>
                       <th>Payout Status</th>
                       <th>Processed Date</th>
-                      <th style={{ textAlign: 'center' }}>Download Statement</th>
                     </tr>
                   </thead>
                   <tbody>
                     {roiHistory.length === 0 ? (
                       <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '48px', color: 'var(--color-text-muted)' }}>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '48px', color: 'var(--color-text-muted)' }}>
                           No ROI payout records found for this client.
                         </td>
                       </tr>
@@ -1397,38 +1368,6 @@ export default function ClientDetail() {
                           <td className="font-semibold">{formatCurrency(roi.amount || 0)}</td>
                           <td><Badge status={(roi.status || 'pending').toLowerCase()}>{roi.status}</Badge></td>
                           <td>{roi.processedDate || roi.paidAt || '—'}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'center' }}>
-                              <button
-                                className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
-                                onClick={() => {
-                                  downloadClientROISingleCSV({ ...roi, month: roi.payoutMonth || roi.month }, { ...client, investments: resolvedInvestments });
-                                  addToast(`Statement CSV downloaded for ${roi.payoutMonth || roi.month}`, 'success', 'Downloaded');
-                                }}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
-                                title="Download CSV"
-                              >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="12" height="12">
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" />
-                                </svg>
-                                CSV
-                              </button>
-                              <button
-                                className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
-                                onClick={() => {
-                                  downloadClientROISinglePDF({ ...roi, month: roi.payoutMonth || roi.month }, { ...client, investments: resolvedInvestments });
-                                  addToast(`Statement PDF generated for ${roi.payoutMonth || roi.month}`, 'success', 'Downloaded');
-                                }}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
-                                title="Download PDF"
-                              >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="12" height="12">
-                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" />
-                                </svg>
-                                PDF
-                              </button>
-                            </div>
-                          </td>
                         </tr>
                       ))
                     )}
