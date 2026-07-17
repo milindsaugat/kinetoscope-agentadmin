@@ -70,3 +70,24 @@ export async function apiRequest(path, options = {}) {
 
   return data;
 }
+
+/**
+ * Generate a cache key scoped to the logged-in agent's ID to prevent
+ * cross-user data leakage.
+ * @param {string} baseKey - The base key name (e.g., 'kfpl_agent_profile_cache')
+ * @returns {string} The scoped cache key
+ */
+export function getAgentCacheKey(baseKey) {
+  try {
+    const authData = localStorage.getItem('kfpl_agent_auth');
+    if (authData) {
+      const parsed = JSON.parse(authData);
+      const agent = parsed.agent || parsed.user || {};
+      const agentId = agent._id || agent.id || 'default';
+      return `${baseKey}_${agentId}`;
+    }
+  } catch (e) {
+    console.error('Failed to resolve agent cache key:', e);
+  }
+  return `${baseKey}_default`;
+}

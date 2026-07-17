@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
-import { apiRequest } from '../../config/apiHelper';
+import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 
 const profileIcons = {
   user: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
@@ -42,7 +42,8 @@ export default function Profile() {
   useEffect(() => {
     // --- SWR Cache Initialization for Instant Load (0ms) ---
     try {
-      const cacheData = localStorage.getItem('kfpl_agent_profile_cache');
+      const cacheKey = getAgentCacheKey('kfpl_agent_profile_cache');
+      const cacheData = localStorage.getItem(cacheKey);
       if (cacheData) {
         const parsed = JSON.parse(cacheData);
         if (parsed.profile) setProfile(parsed.profile);
@@ -169,7 +170,8 @@ export default function Profile() {
         setStats(freshStats);
 
         // Save fresh values to cache
-        localStorage.setItem('kfpl_agent_profile_cache', JSON.stringify({
+        const cacheKey = getAgentCacheKey('kfpl_agent_profile_cache');
+        localStorage.setItem(cacheKey, JSON.stringify({
           profile: rawProfile,
           stats: freshStats
         }));

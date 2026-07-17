@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../data/mockData';
 import DataTable from '../../components/ui/DataTable';
 import Badge from '../../components/ui/Badge';
-import { apiRequest } from '../../config/apiHelper';
+import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 
 const formatClientID = (rawId) => {
   if (!rawId || rawId === '—') return '—';
@@ -39,7 +39,8 @@ export default function MyClients() {
   useEffect(() => {
     // --- SWR Cache Initialization for Instant Load (0ms) ---
     try {
-      const cacheData = localStorage.getItem('kfpl_agent_clients_cache');
+      const cacheKey = getAgentCacheKey('kfpl_agent_clients_cache');
+      const cacheData = localStorage.getItem(cacheKey);
       if (cacheData) {
         setClients(JSON.parse(cacheData));
         setLoading(false);
@@ -63,7 +64,8 @@ export default function MyClients() {
         };
         const list = extractClients(response);
         setClients(list);
-        localStorage.setItem('kfpl_agent_clients_cache', JSON.stringify(list));
+        const cacheKey = getAgentCacheKey('kfpl_agent_clients_cache');
+        localStorage.setItem(cacheKey, JSON.stringify(list));
       } catch (err) {
         console.error('Failed to load clients:', err);
       } finally {

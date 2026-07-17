@@ -10,7 +10,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
 import { formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
-import { apiRequest } from '../../config/apiHelper';
+import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 import { getApiUrl } from '../../config/apiUrl';
 
 const formatClientID = (rawId) => {
@@ -429,6 +429,49 @@ const formatDate = (dateVal) => {
   return `${day}/${month}/${d.getFullYear()}`;
 };
 
+const normalizeUrl = (url) => {
+  if (!url) return '';
+  let normalized = url;
+  if (
+    normalized.startsWith('uploads/') ||
+    normalized.startsWith('/uploads/') ||
+    (!normalized.startsWith('http://') &&
+      !normalized.startsWith('https://') &&
+      !normalized.startsWith('blob:') &&
+      !normalized.startsWith('data:'))
+  ) {
+    const isLocal =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.startsWith('192.168.');
+    const localBackend = import.meta.env.VITE_API_URL_LOCAL || 'http://localhost:5000';
+    const base = isLocal ? localBackend : (import.meta.env.VITE_API_URL_CLOUD || 'https://kinetoscope-backend.vercel.app');
+    const cleanPath = normalized.startsWith('/') ? normalized : '/' + normalized;
+    normalized = base + cleanPath;
+  }
+  if (normalized.startsWith('http://')) {
+    const isLocal = normalized.includes('localhost') || normalized.includes('192.168.');
+    if (!isLocal) {
+      normalized = 'https://' + normalized.substring(7);
+    }
+  }
+  return normalized;
+};
+
+const getFileType = (url, filename) => {
+  if (!url) return 'none';
+  const targetUrl = normalizeUrl(url);
+  const ext = (filename || targetUrl).split('.').pop().toLowerCase();
+
+  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext) || /\.(jpg|jpeg|png|gif|webp|bmp|svg)/i.test(targetUrl);
+  if (isImage) return 'image';
+  const isPdf = ext === 'pdf' || /\.pdf/i.test(targetUrl);
+  if (isPdf) return 'pdf';
+  const isOffice = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext) || /\.(doc|docx|xls|xlsx|ppt|pptx)/i.test(targetUrl);
+  if (isOffice) return 'office';
+  return 'other';
+};
+
 export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -507,7 +550,7 @@ export default function ClientDetail() {
   useEffect(() => {
     // --- SWR Cache Initialization for Instant Load (0ms) ---
     try {
-      const cacheKey = `kfpl_agent_client_detail_${id}`;
+      const cacheKey = getAgentCacheKey(`kfpl_agent_client_detail_${id}`);
       const cacheData = localStorage.getItem(cacheKey);
       if (cacheData) {
         const parsed = JSON.parse(cacheData);
@@ -710,7 +753,8 @@ export default function ClientDetail() {
         }
 
         // Save fresh values to SWR cache
-        localStorage.setItem(`kfpl_agent_client_detail_${id}`, JSON.stringify({
+        const cacheKey = getAgentCacheKey(`kfpl_agent_client_detail_${id}`);
+        localStorage.setItem(cacheKey, JSON.stringify({
           rawClient: clientObj,
           roiHistory: calculatedRoiHistory,
           investmentsData: resolvedInvestments,
@@ -947,43 +991,7 @@ export default function ClientDetail() {
   const totalPaidROI = roiHistory.filter(r => r && String(r.status || '').toLowerCase() === 'paid').reduce((sum, r) => sum + Number(r.amount || 0), 0);
   const totalPendingROI = roiHistory.filter(r => r && String(r.status || '').toLowerCase() === 'pending').reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
-  const normalizeUrl = (url) => {
-    if (!url) return '';
-    let normalized = url;
-    if (
-      normalized.startsWith('uploads/') ||
-      normalized.startsWith('/uploads/') ||
-      (!normalized.startsWith('http://') &&
-        !normalized.startsWith('https://') &&
-        !normalized.startsWith('blob:') &&
-        !normalized.startsWith('data:'))
-    ) {
-      const base = getApiUrl('');
-      const cleanPath = normalized.startsWith('/') ? normalized : '/' + normalized;
-      normalized = base + cleanPath;
-    }
-    if (normalized.startsWith('http://')) {
-      const isLocal = normalized.includes('localhost') || normalized.includes('192.168.');
-      if (!isLocal) {
-        normalized = 'https://' + normalized.substring(7);
-      }
-    }
-    return normalized;
-  };
 
-  const getFileType = (url, filename) => {
-    if (!url) return 'none';
-    const targetUrl = normalizeUrl(url);
-    const ext = (filename || targetUrl).split('.').pop().toLowerCase();
-
-    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext) || /\.(jpg|jpeg|png|gif|webp|bmp|svg)/i.test(targetUrl);
-    if (isImage) return 'image';
-    const isPdf = ext === 'pdf' || /\.pdf/i.test(targetUrl);
-    if (isPdf) return 'pdf';
-    const isOffice = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext) || /\.(doc|docx|xls|xlsx|ppt|pptx)/i.test(targetUrl);
-    if (isOffice) return 'office';
-    return 'other';
-  };
 
   const downloadFile = async (url, filename) => {
     if (!url) {

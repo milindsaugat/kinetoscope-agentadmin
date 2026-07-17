@@ -15,7 +15,7 @@ import KpiCard from '../../components/ui/KpiCard';
 import Badge from '../../components/ui/Badge';
 import DonutChart from '../../components/charts/DonutChart';
 import LineChart from '../../components/charts/LineChart';
-import { apiRequest } from '../../config/apiHelper';
+import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 
 // ── Activity Icons ───────────────────────
 const activityIcons = {
@@ -82,7 +82,8 @@ export default function DashboardHome() {
 
     // --- SWR Cache Initialization for Instant Load (0ms) ---
     try {
-      const cacheData = localStorage.getItem('kfpl_dashboard_cache');
+      const cacheKey = getAgentCacheKey('kfpl_dashboard_cache');
+      const cacheData = localStorage.getItem(cacheKey);
       if (cacheData) {
         const parsed = JSON.parse(cacheData);
         if (parsed.stats) setStats(parsed.stats);
@@ -166,7 +167,8 @@ export default function DashboardHome() {
         }
 
         // Save fresh details to cache
-        localStorage.setItem('kfpl_dashboard_cache', JSON.stringify({
+        const cacheKey = getAgentCacheKey('kfpl_dashboard_cache');
+        localStorage.setItem(cacheKey, JSON.stringify({
           stats: newStats,
           clients: resolvedClients,
           agentName: freshName

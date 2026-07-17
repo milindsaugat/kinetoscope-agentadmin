@@ -117,6 +117,12 @@ export default function Sidebar({ isCollapsed, onToggle, isMobileOpen, onMobileC
     } catch (e) {
       console.error(e);
     }
+    // Clear all cached pages from localStorage
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('kfpl_') && key !== 'kfpl_agent_auth') {
+        localStorage.removeItem(key);
+      }
+    });
     localStorage.removeItem('kfpl_agent_auth');
     window.location.href = '/login';
   };

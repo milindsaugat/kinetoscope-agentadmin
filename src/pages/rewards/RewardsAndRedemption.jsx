@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { rewardsList, rewardsHistory } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
-import { apiRequest } from '../../config/apiHelper';
+import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 
 export default function RewardsAndRedemption() {
   const toast = useToast();
@@ -118,7 +118,8 @@ export default function RewardsAndRedemption() {
       }
 
       // Save to SWR cache
-      localStorage.setItem('kfpl_agent_rewards_cache', JSON.stringify({
+      const cacheKey = getAgentCacheKey('kfpl_agent_rewards_cache');
+      localStorage.setItem(cacheKey, JSON.stringify({
         rewards: finalRewards,
         history: finalHistory
       }));
@@ -135,7 +136,8 @@ export default function RewardsAndRedemption() {
   useEffect(() => {
     // --- SWR Cache Initialization for Instant Load (0ms) ---
     try {
-      const cacheData = localStorage.getItem('kfpl_agent_rewards_cache');
+      const cacheKey = getAgentCacheKey('kfpl_agent_rewards_cache');
+      const cacheData = localStorage.getItem(cacheKey);
       if (cacheData) {
         const parsed = JSON.parse(cacheData);
         if (parsed.rewards) setRewards(parsed.rewards);
