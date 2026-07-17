@@ -11,6 +11,7 @@ import Badge from '../../components/ui/Badge';
 import { formatCurrency } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest } from '../../config/apiHelper';
+import { getApiUrl } from '../../config/apiUrl';
 
 const formatClientID = (rawId) => {
   if (!rawId || rawId === '—') return '—';
@@ -441,6 +442,67 @@ export default function ClientDetail() {
   const [perksData, setPerksData] = useState([]);
   const [docsData, setDocsData] = useState([]);
   const [verifiedDocs, setVerifiedDocs] = useState({});
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState([]);
+
+  useEffect(() => {
+    if (!viewingDoc || !viewingDoc.url) {
+      setPreviewUrl('');
+      return;
+    }
+
+    let active = true;
+    let objUrl = '';
+
+    const loadPreview = async () => {
+      setPreviewLoading(true);
+      try {
+        const targetUrl = normalizeUrl(viewingDoc.url);
+        const isCloudinary = targetUrl.includes('cloudinary.com') || targetUrl.includes('res.cloudinary.com');
+
+        const headers = {};
+        if (!isCloudinary) {
+          const authData = localStorage.getItem('kfpl_agent_auth');
+          let token = '';
+          if (authData) {
+            const parsed = JSON.parse(authData);
+            token = parsed.token || '';
+          }
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+        }
+
+        const response = await fetch(targetUrl, { headers });
+        if (!response.ok) throw new Error('Fetch failed');
+        const blob = await response.blob();
+
+        if (active) {
+          objUrl = URL.createObjectURL(blob);
+          setPreviewUrl(objUrl);
+        }
+      } catch (err) {
+        console.error('Preview fetch error:', err);
+        if (active) {
+          setPreviewUrl(normalizeUrl(viewingDoc.url));
+        }
+      } finally {
+        if (active) {
+          setPreviewLoading(false);
+        }
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      active = false;
+      if (objUrl) {
+        URL.revokeObjectURL(objUrl);
+      }
+    };
+  }, [viewingDoc]);
 
   useEffect(() => {
     // --- SWR Cache Initialization for Instant Load (0ms) ---
@@ -463,11 +525,15 @@ export default function ClientDetail() {
 
     const fetchClient = async () => {
       try {
-        // Concurrently run ALL independent requests in a single Promise.all
+        // Concurrently run ALL independent requests with fallback chains
         const [singleRes, listRes, payoutsRes, superAdminClientRes] = await Promise.all([
           apiRequest(`/api/agent/clients/${id}`).catch(() => null),
           apiRequest('/api/agent/clients').catch(() => null),
-          apiRequest(`/api/super-admin/roi/payouts?status=All&recipientType=All`).catch(() => null),
+          apiRequest(`/api/agent/clients/${id}/payouts`)
+            .catch(() => apiRequest(`/api/agent/roi/payouts?status=All&recipientType=All`))
+            .catch(() => apiRequest(`/api/agent/roi/payouts`))
+            .catch(() => apiRequest(`/api/super-admin/roi/payouts?status=All&recipientType=All`))
+            .catch(() => null),
           apiRequest(`/api/super-admin/clients/${id}`).catch(() => null)
         ]);
 
@@ -495,16 +561,17 @@ export default function ClientDetail() {
         // Use super-admin response as primary source (it has header/profile/summaryCards structure)
         // Fall back to agent API response
         let clientObj = null;
-        let superAdminData = null;
-        if (superAdminClientRes) {
-          superAdminData = superAdminClientRes.data || superAdminClientRes;
-          // The super-admin response has { profile, header, summaryCards } structure
-          const saProfile = superAdminData.profile || superAdminData;
+        let superAdminData = superAdminClientRes ? (superAdminClientRes.data || superAdminClientRes) : null;
+        
+        // If super admin endpoint failed (403), use agent endpoint singleRes as primary data source
+        const primaryDataObj = superAdminData || (singleRes ? (singleRes.data || singleRes) : null);
+        if (primaryDataObj) {
+          const saProfile = primaryDataObj.profile || primaryDataObj;
           clientObj = {
-            ...superAdminData,
+            ...primaryDataObj,
             ...saProfile,
-            _id: saProfile._id || superAdminData._id || id,
-            _superAdminData: superAdminData, // keep raw reference
+            _id: saProfile._id || primaryDataObj._id || id,
+            _superAdminData: primaryDataObj, // keep raw reference for normalizer
           };
         }
 
@@ -530,48 +597,47 @@ export default function ClientDetail() {
         const profileId = clientObj.profile?._id || clientObj._id || clientObj.id;
         const recipientUserId = clientObj.userId || clientObj._id || clientObj.id;
 
-        // Concurrently run stage 2: investments, perks, and documents using profileId
+        // Concurrently run stage 2: investments, perks, and documents using profileId & id (fallback chains from agent to super-admin)
         const [investmentsRes, perksRes, docsRes] = await Promise.all([
-          apiRequest(`/api/super-admin/clients/${profileId}/investments`).catch(() => null),
-          apiRequest(`/api/super-admin/clients/${profileId}/perks`).catch(() => null),
-          apiRequest(`/api/super-admin/clients/${profileId}/documents`).catch(() => null)
+          apiRequest(`/api/agent/clients/${id}/investments`)
+            .catch(() => apiRequest(`/api/agent/clients/${profileId}/investments`))
+            .catch(() => apiRequest(`/api/super-admin/clients/${profileId}/investments`))
+            .catch(() => null),
+          apiRequest(`/api/agent/clients/${id}/perks`)
+            .catch(() => apiRequest(`/api/agent/clients/${profileId}/perks`))
+            .catch(() => apiRequest(`/api/super-admin/clients/${profileId}/perks`))
+            .catch(() => null),
+          apiRequest(`/api/agent/clients/${id}/documents`)
+            .catch(() => apiRequest(`/api/agent/clients/${profileId}/documents`))
+            .catch(() => apiRequest(`/api/super-admin/clients/${profileId}/documents`))
+            .catch(() => null)
         ]);
 
-        // Process ROI payouts list
+        // Process ROI payouts list (matches super admin mapping)
         let calculatedRoiHistory = [];
-        const profile = clientObj.profile || clientObj || {};
-        const roiPercent = profile.roiPercent || profile.monthlyRoi || profile.roiPercentage || clientObj.roiPercent || clientObj.monthlyRoi || clientObj.roiPercentage || clientObj.roi || 1.2;
-        const totalInvestment = profile.totalInvestment || profile.totalPortfolioValue || clientObj.totalInvestment || clientObj.investmentAmount || 0;
-        const monthlyROIVal = Math.round((totalInvestment * roiPercent) / 100);
-
-        const fallbackHistory = [
-          { id: 201, month: 'Jan 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-01-31' },
-          { id: 202, month: 'Feb 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-02-28' },
-          { id: 203, month: 'Mar 2026', amount: monthlyROIVal, status: 'paid', paidAt: '2026-03-31' },
-          { id: 204, month: 'Apr 2026', amount: monthlyROIVal, status: 'pending', paidAt: null },
-          { id: 205, month: 'May 2026', amount: monthlyROIVal, status: 'pending', paidAt: null },
-        ];
-
-        let backendPayouts = [];
         if (payoutsRes) {
           const data = payoutsRes.data || payoutsRes;
-          const payoutsList = Array.isArray(data) ? data : (data.payouts || data.list || []);
-          backendPayouts = payoutsList.filter(p => {
-            const recId = p.recipientId || p.investorId || p.clientId || '';
-            return String(recId) === String(recipientUserId);
-          });
-        }
+          let extractedPayouts = [];
+          if (Array.isArray(data)) {
+            extractedPayouts = data;
+          } else if (data.payouts && Array.isArray(data.payouts)) {
+            extractedPayouts = data.payouts;
+          } else if (data.list && Array.isArray(data.list)) {
+            extractedPayouts = data.list;
+          }
 
-        if (backendPayouts.length > 0) {
-          calculatedRoiHistory = backendPayouts.map((p, idx) => ({
-            id: p._id || p.id || idx,
-            month: p.month || p.period || '—',
-            amount: p.amount || p.payoutAmount || 0,
-            status: p.status || 'pending',
-            paidAt: p.paidAt || p.date || p.createdAt || '—'
+          calculatedRoiHistory = extractedPayouts.filter(r => {
+            const recId = r.recipientId || r.investorId || r.clientId || '';
+            return String(recId) === String(profileId) || String(recId) === String(recipientUserId);
+          }).map(r => ({
+            _id: r.id || r._id,
+            payoutMonth: r.month || r.period || '—',
+            roiRate: r.roiPercentage || 1.2,
+            amount: Number(r.amount || 0),
+            status: r.status || 'pending',
+            processedDate: r.paidAt || r.date || '—',
+            ...r
           }));
-        } else {
-          calculatedRoiHistory = fallbackHistory;
         }
         setRoiHistory(calculatedRoiHistory);
 
@@ -609,6 +675,40 @@ export default function ClientDetail() {
         setDocsData(resolvedDocs);
         setVerifiedDocs(verifiedMap);
 
+        // Run diagnostic checks for other potential agent endpoints
+        try {
+          const testPaths = [
+            `/api/agent/investments`,
+            `/api/agent/investments/${id}`,
+            `/api/agent/investments?clientId=${id}`,
+            `/api/agent/clients/${id}/investments`,
+            `/api/agent/clients/${profileId}/investments`,
+            `/api/agent/perks`,
+            `/api/agent/perks/${id}`,
+            `/api/agent/perks?clientId=${id}`,
+            `/api/agent/clients/${id}/perks`,
+            `/api/agent/clients/${profileId}/perks`,
+            `/api/agent/payouts`,
+            `/api/agent/roi/payouts`,
+            `/api/agent/clients/${id}/payouts`,
+            `/api/agent/clients/${profileId}/payouts`,
+            `/api/super-admin/clients/${profileId}/investments`
+          ];
+          const testResults = await Promise.all(
+            testPaths.map(async path => {
+              try {
+                const res = await apiRequest(path);
+                return { path, status: '200 OK', isArray: Array.isArray(res), length: Array.isArray(res) ? res.length : (res?.data && Array.isArray(res.data) ? res.data.length : (res?.investments && Array.isArray(res.investments) ? res.investments.length : null)) };
+              } catch (err) {
+                return { path, status: err.status || 'Error/Forbidden' };
+              }
+            })
+          );
+          setDebugInfo(testResults);
+        } catch (e) {
+          console.warn('Diagnostics failed:', e);
+        }
+
         // Save fresh values to SWR cache
         localStorage.setItem(`kfpl_agent_client_detail_${id}`, JSON.stringify({
           rawClient: clientObj,
@@ -641,27 +741,28 @@ export default function ClientDetail() {
     );
   }
 
-  if (!rawClient) {
-    return (
-      <div className="kfpl-page">
-        <div className="kfpl-empty-state">
-          <div className="kfpl-empty-state-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+  try {
+    if (!rawClient) {
+      return (
+        <div className="kfpl-page">
+          <div className="kfpl-empty-state">
+            <div className="kfpl-empty-state-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+            </div>
+            <div className="kfpl-empty-state-title">Client not found</div>
+            <div className="kfpl-empty-state-text">The requested client profile could not be located in your database.</div>
+            <button className="kfpl-btn kfpl-btn--secondary mt-4" onClick={() => navigate('/clients')}>Back to List</button>
           </div>
-          <div className="kfpl-empty-state-title">Client not found</div>
-          <div className="kfpl-empty-state-text">The requested client profile could not be located in your database.</div>
-          <button className="kfpl-btn kfpl-btn--secondary mt-4" onClick={() => navigate('/clients')}>Back to List</button>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  // Normalize client data using EXACT same logic as Super Admin InvestorDetail.jsx
-  // Priority: super-admin structured data (header/profile/summaryCards) > rawClient > '—'
-  const saData = rawClient._superAdminData || {};
-  const saProfile = saData.profile || rawClient.profile || rawClient || {};
-  const saHeader = saData.header || {};
-  const saSummary = saData.summaryCards || {};
+    // Normalize client data using EXACT same logic as Super Admin InvestorDetail.jsx
+    // Priority: super-admin structured data (header/profile/summaryCards) > rawClient > '—'
+    const saData = rawClient._superAdminData || {};
+    const saProfile = saData.profile || rawClient.profile || rawClient || {};
+    const saHeader = saData.header || {};
+    const saSummary = saData.summaryCards || {};
 
   // Determine KYC status (check verified docs)
   let kycStatus = (saHeader.kycStatus || saSummary.kycStatus || saProfile.kycStatus || rawClient.kycStatus || 'PENDING').toUpperCase();
@@ -678,7 +779,7 @@ export default function ClientDetail() {
     name: saHeader.clientName || saProfile.fullName || saProfile.name || rawClient.name || rawClient.fullName || '—',
     clientId: formatClientID(saHeader.clientCode || saProfile.clientCode || saProfile.clientId || rawClient.clientCode || rawClient.clientId || ''),
     email: saProfile.email || rawClient.email || '—',
-    dob: saProfile.dob ? new Date(saProfile.dob).toLocaleDateString('en-IN') : (rawClient.dob ? new Date(rawClient.dob).toLocaleDateString('en-IN') : '—'),
+    dob: (saProfile.dob && !isNaN(new Date(saProfile.dob).getTime())) ? new Date(saProfile.dob).toLocaleDateString('en-IN') : ((rawClient.dob && !isNaN(new Date(rawClient.dob).getTime())) ? new Date(rawClient.dob).toLocaleDateString('en-IN') : '—'),
     address: saProfile.address || rawClient.address || '—',
     mobile: saProfile.phone || saProfile.mobile || rawClient.phone || rawClient.mobile || '—',
     dateOfJoining: saData.joinDate || saProfile.joinDate || rawClient.dateOfJoining || rawClient.joinDate || rawClient.createdAt,
@@ -721,25 +822,24 @@ export default function ClientDetail() {
     'Aggressive': 'rejected'   // red
   };
 
-  // Use investments from backend, or dynamically generate sub-investments if none found
-  const investments = (investmentsData && investmentsData.length > 0) ? investmentsData.map((inv, idx) => ({
-    id: inv._id || inv.id || idx,
-    segment: inv.segment || inv.movieName || inv.project || 'Film Making',
-    amount: inv.amount || inv.investmentAmount || 0,
-    roi: inv.roi || inv.roiPercentage || client.roiPercent || 1.2,
-    risk: inv.risk || inv.riskProfile || 'Medium',
-    date: inv.date || inv.investmentDate || client.dateOfJoining,
-    status: inv.status || 'Active'
-  })) : [
-    { id: 101, segment: 'Film Making', amount: Math.round(client.totalInvestment * 0.6), date: client.dateOfJoining, roi: client.roiPercent, status: 'Active', risk: 'Medium' },
-    { id: 102, segment: 'Distribution', amount: Math.round(client.totalInvestment * 0.4), date: client.dateOfJoining, roi: client.roiPercent, status: 'Active', risk: 'Low' },
-  ];
+  // Mapped variables from API response with NO fallbacks/mocks
+  const resolvedInvestments = Array.isArray(investmentsData)
+    ? investmentsData
+    : (investmentsData && investmentsData.investments)
+      ? investmentsData.investments
+      : [];
+
+  const perksList = Array.isArray(perksData)
+    ? perksData
+    : (perksData && perksData.perks)
+      ? perksData.perks
+      : [];
 
   // Calculate monthly ROI value for investments list breakdown
   const monthlyROIVal = Math.round((client.totalInvestment * client.roiPercent) / 100);
 
   // Enrich client with calculated values
-  client.investments = investments;
+  client.investments = resolvedInvestments;
   client.roiHistory = roiHistory;
   client.category = category;
 
@@ -748,18 +848,120 @@ export default function ClientDetail() {
   const totalPaidROI = roiHistory.filter(r => r.status === 'paid').reduce((sum, r) => sum + r.amount, 0);
   const totalPendingROI = roiHistory.filter(r => r.status === 'pending').reduce((sum, r) => sum + r.amount, 0);
 
-  // Perks list matching client tier
-  const getPerksList = (tier) => {
-    if (tier === 'diamond') return ['Priority Support', 'Annual Gala Invite', 'Quarterly Review', 'Film Set Visit', 'VIP Screening'];
-    if (tier === 'platinum') return ['Priority Support', 'Annual Gala Invite', 'Quarterly Review', 'VIP Screening'];
-    if (tier === 'gold') return ['Priority Support', 'Annual Gala Invite', 'Quarterly Review'];
-    return ['Priority Support', 'Annual Gala Invite'];
+  const normalizeUrl = (url) => {
+    if (!url) return '';
+    let normalized = url;
+    if (
+      normalized.startsWith('uploads/') ||
+      normalized.startsWith('/uploads/') ||
+      (!normalized.startsWith('http://') &&
+        !normalized.startsWith('https://') &&
+        !normalized.startsWith('blob:') &&
+        !normalized.startsWith('data:'))
+    ) {
+      const base = getApiUrl('');
+      const cleanPath = normalized.startsWith('/') ? normalized : '/' + normalized;
+      normalized = base + cleanPath;
+    }
+    if (normalized.startsWith('http://')) {
+      const isLocal = normalized.includes('localhost') || normalized.includes('192.168.');
+      if (!isLocal) {
+        normalized = 'https://' + normalized.substring(7);
+      }
+    }
+    return normalized;
   };
-  const perks = getPerksList(category);
+
+  const getFileType = (url, filename) => {
+    if (!url) return 'none';
+    const targetUrl = normalizeUrl(url);
+    const ext = (filename || targetUrl).split('.').pop().toLowerCase();
+
+    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext) || /\.(jpg|jpeg|png|gif|webp|bmp|svg)/i.test(targetUrl);
+    if (isImage) return 'image';
+    const isPdf = ext === 'pdf' || /\.pdf/i.test(targetUrl);
+    if (isPdf) return 'pdf';
+    const isOffice = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext) || /\.(doc|docx|xls|xlsx|ppt|pptx)/i.test(targetUrl);
+    if (isOffice) return 'office';
+    return 'other';
+  };
+
+  const downloadFile = async (url, filename) => {
+    if (!url) {
+      addToast('No file URL available', 'error', 'Download Failed');
+      return;
+    }
+    const targetUrl = normalizeUrl(url);
+    const isCloudinary = targetUrl.includes('cloudinary.com') || targetUrl.includes('res.cloudinary.com');
+
+    if (isCloudinary) {
+      addToast('Starting file download...', 'info', 'Downloading');
+      try {
+        const link = document.createElement('a');
+        link.href = targetUrl;
+        link.setAttribute('download', filename || 'document');
+        link.setAttribute('target', '_blank');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        addToast('File download started!', 'success', 'Downloaded');
+      } catch (err) {
+        window.open(targetUrl, '_blank');
+        addToast('File opened in new tab', 'success', 'Opened');
+      }
+      return;
+    }
+
+    addToast('Starting secure file download...', 'info', 'Downloading');
+    try {
+      const authData = localStorage.getItem('kfpl_agent_auth');
+      let token = '';
+      if (authData) {
+        const parsed = JSON.parse(authData);
+        token = parsed.token || '';
+      }
+
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(targetUrl, { headers });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'document';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      addToast('File downloaded successfully!', 'success', 'Downloaded');
+    } catch (error) {
+      console.error('Fetch download error, falling back to window.open:', error);
+      window.open(targetUrl, '_blank');
+      addToast('File opened in new tab', 'success', 'Opened');
+    }
+  };
 
   return (
     <ErrorBoundary>
       <div className="kfpl-page" id="client-detail-page">
+        {/* Temporary debug dump */}
+        <pre style={{ fontSize: '11px', background: '#1e293b', color: '#38bdf8', padding: '15px', borderRadius: '8px', maxHeight: '300px', overflow: 'auto', marginBottom: '20px' }}>
+          {JSON.stringify({
+            client_id_params: id,
+            debugInfo,
+            rawClient_keys: rawClient ? Object.keys(rawClient) : [],
+            rawClient_profile: rawClient?.profile,
+            rawClient_docs_length: rawClient?.documents?.length || 0,
+            investmentsData_length: investmentsData?.length || 0,
+            perksData_length: perksData?.length || 0,
+            roiHistory_length: roiHistory?.length || 0
+          }, null, 2)}
+        </pre>
+
         {/* Premium Gradient Header Card */}
         <div className="kfpl-detail-card-header">
           <div className="kfpl-detail-profile">
@@ -791,7 +993,7 @@ export default function ClientDetail() {
           </div>
           <div className="kfpl-detail-kpi-summary-card">
             <span className="kfpl-detail-kpi-summary-label">Active Segments</span>
-            <span className="kfpl-detail-kpi-summary-value">{client.activeSegments || investments.length} Segments</span>
+            <span className="kfpl-detail-kpi-summary-value">{client.activeSegments || resolvedInvestments.length} Segments</span>
           </div>
           <div className="kfpl-detail-kpi-summary-card">
             <span className="kfpl-detail-kpi-summary-label">Monthly ROI %</span>
@@ -1001,18 +1203,20 @@ export default function ClientDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {investments.map(inv => (
-                    <tr key={inv.id}>
+                  {resolvedInvestments.length === 0 ? (
+                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: '48px', color: 'var(--color-text-muted)' }}>No investments found.</td></tr>
+                  ) : resolvedInvestments.map(inv => (
+                    <tr key={inv._id || inv.id}>
                       <td className="kfpl-table-cell-primary">{inv.segment}</td>
-                      <td className="font-semibold" style={{ color: '#10B981' }}>{formatCurrency(inv.amount)}</td>
-                      <td>{inv.roi}%</td>
+                      <td className="font-semibold" style={{ color: '#10B981' }}>{formatCurrency(inv.investmentAmount || inv.amount || 0)}</td>
+                      <td>{inv.roiPercentage || inv.roi || client.roiPercent}%</td>
                       <td>
-                        <Badge status={inv.risk === 'High' ? 'rejected' : inv.risk === 'Medium' ? 'pending' : 'active'}>
-                          {inv.risk}
+                        <Badge status={inv.riskPercentage > 50 ? 'rejected' : inv.riskPercentage > 25 ? 'pending' : 'active'}>
+                          {inv.riskPercentage > 50 ? 'High' : inv.riskPercentage > 25 ? 'Medium' : 'Low'}
                         </Badge>
                       </td>
-                      <td>{formatDate(inv.date)}</td>
-                      <td><Badge status={inv.status}>{inv.status}</Badge></td>
+                      <td>{formatDate(inv.allocationDate || inv.investmentDate)}</td>
+                      <td><Badge status={(inv.status || 'active').toLowerCase()}>{inv.status || 'Active'}</Badge></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1092,19 +1296,19 @@ export default function ClientDetail() {
                       </tr>
                     ) : (
                       roiHistory.map(roi => (
-                        <tr key={roi.id}>
-                          <td className="kfpl-table-cell-primary">{roi.month}</td>
-                          <td><strong>{client.roiPercent}%</strong></td>
-                          <td className="font-semibold">{formatCurrency(roi.amount)}</td>
-                          <td><Badge status={roi.status}>{roi.status}</Badge></td>
-                          <td>{roi.paidAt || '—'}</td>
+                        <tr key={roi._id || roi.id}>
+                          <td className="kfpl-table-cell-primary">{roi.payoutMonth || roi.month}</td>
+                          <td><strong>{roi.roiRate || client.roiPercent}%</strong></td>
+                          <td className="font-semibold">{formatCurrency(roi.amount || 0)}</td>
+                          <td><Badge status={(roi.status || 'pending').toLowerCase()}>{roi.status}</Badge></td>
+                          <td>{roi.processedDate || roi.paidAt || '—'}</td>
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'center' }}>
                               <button
                                 className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
                                 onClick={() => {
-                                  downloadClientROISingleCSV(roi, client);
-                                  addToast(`Statement CSV downloaded for ${roi.month}`, 'success', 'Downloaded');
+                                  downloadClientROISingleCSV({ ...roi, month: roi.payoutMonth || roi.month }, { ...client, investments: resolvedInvestments });
+                                  addToast(`Statement CSV downloaded for ${roi.payoutMonth || roi.month}`, 'success', 'Downloaded');
                                 }}
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
                                 title="Download CSV"
@@ -1117,8 +1321,8 @@ export default function ClientDetail() {
                               <button
                                 className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
                                 onClick={() => {
-                                  downloadClientROISinglePDF(roi, client);
-                                  addToast(`Statement PDF generated for ${roi.month}`, 'success', 'Downloaded');
+                                  downloadClientROISinglePDF({ ...roi, month: roi.payoutMonth || roi.month }, { ...client, investments: resolvedInvestments });
+                                  addToast(`Statement PDF generated for ${roi.payoutMonth || roi.month}`, 'success', 'Downloaded');
                                 }}
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', padding: '4px 8px' }}
                                 title="Download PDF"
@@ -1149,30 +1353,33 @@ export default function ClientDetail() {
               </div>
             </div>
 
-            {perks.length === 0 ? (
+            {perksList.length === 0 ? (
               <div className="kfpl-detail-info-card">
-                <div className="kfpl-empty-state" style={{ padding: '40px' }}>
-                  <div className="kfpl-empty-state-title">No perks assigned</div>
-                  <div className="kfpl-empty-state-text">No recognition benefits exist for this tier.</div>
+                <div className="kfpl-empty" style={{ padding: '40px' }}>
+                  <div className="kfpl-empty-title">No perks assigned</div>
+                  <div className="kfpl-empty-text">Upgrade client recognition tier or assign custom perks.</div>
                 </div>
               </div>
             ) : (
               <div className="kfpl-perks-grid">
-                {perks.map((perkName, i) => {
-                  const details = perkDetails[perkName] || { desc: 'Assigned platform benefit and VIP privileges.', icon: '⭐' };
+                {perksList.map((perk, i) => {
+                  const perkName = perk.title || perk.name || perk;
+                  const perkDesc = perk.description || perkDetails[perkName]?.desc || 'Assigned platform benefit and VIP privileges.';
+                  const perkIcon = perkDetails[perkName]?.icon || '⭐';
+                  const perkBadge = (perk.badge || client.category || 'silver').toLowerCase();
                   return (
                     <div key={i} className="kfpl-perk-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                       <div className="kfpl-perk-tier-stripe" style={{ background: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' }} />
-                      <div className="kfpl-perk-card-header">
-                        <div className="kfpl-perk-icon-wrap">
-                          <span style={{ fontSize: '1.25rem' }}>{details.icon}</span>
+                      <div className="kfpl-perk-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 20px 0' }}>
+                        <div className="kfpl-perk-icon-wrap" style={{ background: 'var(--color-gold-light)', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}>
+                          <span style={{ fontSize: '1.25rem' }}>{perkIcon}</span>
                         </div>
-                        <Badge status={category}>{category}</Badge>
+                        <Badge status={perkBadge}>{perkBadge}</Badge>
                       </div>
-                      <div className="kfpl-perk-card-body">
-                        <h4 className="kfpl-perk-card-title" style={{ color: 'var(--color-text-primary)' }}>{perkName}</h4>
-                        <p className="kfpl-perk-card-desc">
-                          {details.desc}
+                      <div className="kfpl-perk-card-body" style={{ flex: 1, padding: '16px 20px' }}>
+                        <h4 className="kfpl-perk-card-title" style={{ margin: '0 0 8px 0', fontSize: '1rem', fontWeight: 700 }}>{perkName}</h4>
+                        <p className="kfpl-perk-card-desc" style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
+                          {perkDesc}
                         </p>
                       </div>
                     </div>
@@ -1193,60 +1400,58 @@ export default function ClientDetail() {
             </div>
 
             <div className="kfpl-detail-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-              {[
-                { id: 'pan', label: 'PAN Card Upload', desc: 'Proof of PAN Card Identification', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_PAN.pdf`, size: '1.2 MB' },
-                { id: 'aadhar', label: 'Aadhaar Card Upload', desc: 'Proof of Identity and Address', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_Aadhaar.pdf`, size: '2.4 MB' },
-                { id: 'bank', label: 'Bank Details Document', desc: 'Cancelled Cheque or Bank Statement', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_BankProof.pdf`, size: '1.8 MB' },
-                { id: 'nominee', label: 'Nominee ID Proof', desc: 'ID Proof for Assigned Nominee', filename: 'Nominee_ID.pdf', size: '1.5 MB' },
-                { id: 'agreement', label: 'Agreement Document', desc: 'Signed Investment Agreement Contract', filename: `${(client.name || 'Client').replace(/\s/g, '_')}_Agreement.pdf`, size: '3.1 MB' }
-              ].map((doc, idx) => (
-                <div key={idx} className="kfpl-detail-info-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '20px', minHeight: '160px', position: 'relative' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                      <div style={{ background: 'var(--color-gold-glow, #fef3c7)', color: 'var(--color-gold-dark, #b38600)', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="20" height="20">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-                        </svg>
-                      </div>
+              {(() => {
+                const documentsList = docsData && docsData.documents ? docsData.documents : (Array.isArray(docsData) ? docsData : []);
+                if (documentsList.length === 0) {
+                  return <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px', color: 'var(--color-text-muted)' }}>No documents found.</div>;
+                }
+                return documentsList.map((doc, idx) => {
+                  const docName = doc.name || doc.label;
+                  const isVerified = !!verifiedDocs[docName];
+                  return (
+                    <div key={idx} className="kfpl-detail-info-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '20px', minHeight: '160px', position: 'relative' }}>
                       <div>
-                        <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{doc.label}</h4>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>PDF Document • {doc.size}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                          <div style={{ background: 'var(--color-gold-glow, #fef3c7)', color: 'var(--color-gold-dark, #b38600)', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="20" height="20">
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                            </svg>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{docName}</h4>
+                              {isVerified && <Badge status="active">Verified</Badge>}
+                            </div>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>{doc.fileName || 'PDF Document'} • {doc.fileSize || '—'}</span>
+                          </div>
+                        </div>
+                        <p style={{ margin: '0 0 14px 0', fontSize: '0.8rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+                          {doc.description || doc.desc || 'Uploaded document'}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border-light)', paddingTop: '12px', marginTop: '12px' }}>
+                        <button
+                          className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
+                          style={{ flex: 1, fontSize: '0.78rem', padding: '6px 0' }}
+                          onClick={() => setViewingDoc({ label: docName, filename: doc.fileName || 'document.pdf', investorName: doc.holder || client.name, status: isVerified ? 'Verified' : 'Pending Verification', uploadedAt: doc.uploadedDate || doc.uploaded || client.dateOfJoining, url: doc.url })}
+                        >
+                          View Document
+                        </button>
+                        <button
+                          className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
+                          style={{ padding: '6px 10px' }}
+                          onClick={() => downloadFile(doc.url, docName)}
+                          title="Download File"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="14" height="14">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                        </button>
                       </div>
                     </div>
-                    <p style={{ margin: '0 0 14px 0', fontSize: '0.8rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
-                      {doc.desc}
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--color-border-light)', paddingTop: '12px', marginTop: '12px' }}>
-                    <button
-                      className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
-                      style={{ flex: 1, fontSize: '0.78rem', padding: '6px 0' }}
-                      onClick={() => setViewingDoc({ ...doc, investorName: client.name, status: 'Verified', uploadedAt: formatDate(client.dateOfJoining) })}
-                    >
-                      View Document
-                    </button>
-                    <button
-                      className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
-                      style={{ padding: '6px 10px' }}
-                      onClick={() => {
-                        const blob = new Blob([`Dummy file content for ${doc.label} of ${client.name}`], { type: 'text/plain' });
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = doc.filename;
-                        link.click();
-                        URL.revokeObjectURL(url);
-                        addToast(`${doc.label} downloaded`, 'success', 'Downloaded');
-                      }}
-                      title="Download File"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" width="14" height="14">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  );
+                });
+              })()}
             </div>
           </div>
         )}
@@ -1259,80 +1464,104 @@ export default function ClientDetail() {
           >
             <div
               className="kfpl-modal"
-              style={{ maxWidth: '680px', width: '90%' }}
+              style={{ maxWidth: '640px', width: '95%' }}
               onClick={e => e.stopPropagation()}
             >
-              <div className="kfpl-modal-header">
-                <h3 className="kfpl-modal-title">{viewingDoc.label}</h3>
+              <div className="kfpl-modal-header" style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', background: '#ffffff' }}>
+                <h3 className="kfpl-modal-title" style={{ color: '#1e293b', fontSize: '1.05rem', fontWeight: 700 }}>{viewingDoc.label}</h3>
                 <button className="kfpl-modal-close" onClick={() => setViewingDoc(null)} aria-label="Close modal">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ color: '#64748b', width: '16px', height: '16px' }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
-              <div className="kfpl-modal-body" style={{ background: '#f8fafc', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '380px' }}>
-                <div style={{
-                  background: '#ffffff', width: '100%', maxWidth: '480px', borderRadius: '12px',
-                  border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)', padding: '24px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '6px', background: 'linear-gradient(90deg, var(--color-gold) 0%, #0F766E 100%)' }} />
-
-                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-gold-dark)" strokeWidth="1.5" strokeLinecap="round" width="64" height="64" style={{ marginBottom: '16px', opacity: 0.85 }}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-                  </svg>
-
-                  <h4 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 800 }}>{viewingDoc.label}</h4>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '20px' }}>{viewingDoc.filename}</span>
-
-                  <div style={{
-                    width: '100%', background: '#f1f5f9', borderRadius: '8px', border: '1px dashed #cbd5e1',
-                    padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
-                      <span style={{ fontWeight: 600, color: '#64748b' }}>Holder:</span>
-                      <span style={{ fontWeight: 700, color: '#1e293b' }}>{viewingDoc.investorName}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
-                      <span style={{ fontWeight: 600, color: '#64748b' }}>Status:</span>
-                      <span style={{ fontWeight: 700, color: '#10b981' }}>{viewingDoc.status}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
-                      <span style={{ fontWeight: 600, color: '#64748b' }}>Verification:</span>
-                      <span style={{ fontWeight: 700, color: '#1e293b' }}>Digital Signatures Valid</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                      <span style={{ fontWeight: 600, color: '#64748b' }}>Uploaded:</span>
-                      <span style={{ fontWeight: 700, color: '#1e293b' }}>{viewingDoc.uploadedAt}</span>
-                    </div>
+              <div className="kfpl-modal-body" style={{ background: '#f8fafc', padding: 0, display: 'flex', flexDirection: 'column' }}>
+                {/* File Preview Area */}
+                {previewLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', color: '#64748b', minHeight: '260px' }}>
+                    <div style={{ width: '32px', height: '32px', border: '3px solid #e2e8f0', borderTopColor: '#0f766e', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    <span style={{ fontSize: '0.8rem', marginTop: '12px', fontWeight: 500 }}>Loading secure document preview...</span>
                   </div>
+                ) : previewUrl ? (
+                  (() => {
+                    const fileUrl = previewUrl;
+                    const fileType = getFileType(viewingDoc.url, viewingDoc.filename);
+                    if (fileType === 'image') {
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', background: '#f8fafc', minHeight: '260px' }}>
+                          <img src={fileUrl} alt={viewingDoc.label} style={{ maxWidth: '100%', maxHeight: '320px', objectFit: 'contain', borderRadius: '6px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
+                        </div>
+                      );
+                    } else if (fileType === 'pdf') {
+                      return <iframe src={fileUrl} title={viewingDoc.label} style={{ width: '100%', height: '450px', border: 'none', background: '#ffffff' }} />;
+                    } else if (fileType === 'office') {
+                      const isBlob = fileUrl.startsWith('blob:') || fileUrl.startsWith('data:');
+                      if (isBlob) {
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', background: '#f8fafc', minHeight: '260px', color: '#64748b' }}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48" style={{ marginBottom: '12px', opacity: 0.6 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                            <p style={{ margin: 0, fontSize: '0.8rem' }}>Local document. Click "Download Original" to view.</p>
+                          </div>
+                        );
+                      }
+                      return <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`} title={viewingDoc.label} style={{ width: '100%', height: '450px', border: 'none' }} />;
+                    } else {
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', background: '#f8fafc', minHeight: '260px', color: '#64748b' }}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48" style={{ marginBottom: '12px', opacity: 0.6 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                          <p style={{ margin: 0, fontSize: '0.8rem' }}>Preview not available for this file type</p>
+                        </div>
+                      );
+                    }
+                  })()
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', background: '#f8fafc', minHeight: '260px', color: '#64748b' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48" style={{ marginBottom: '12px', opacity: 0.6 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    <p style={{ margin: 0, fontSize: '0.8rem' }}>No file available</p>
+                  </div>
+                )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '20px', color: '#64748b', fontSize: '0.75rem' }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="12" height="12">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    <span>Secured PDF Document. Download to view raw scan.</span>
+                {/* Document Info Bar */}
+                <div style={{ background: '#ffffff', padding: '14px 20px', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div>
+                      <h4 style={{ margin: '0 0 2px 0', fontSize: '0.9rem', fontWeight: 700, color: '#1e293b' }}>{viewingDoc.filename}</h4>
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Uploaded: {viewingDoc.uploadedAt}</span>
+                    </div>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '3px 10px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 700,
+                      background: verifiedDocs[viewingDoc.label] ? '#dcfce7' : '#fef3c7',
+                      color: verifiedDocs[viewingDoc.label] ? '#16a34a' : '#d97706',
+                      border: `1px solid ${verifiedDocs[viewingDoc.label] ? '#bbf7d0' : '#fde68a'}`
+                    }}>
+                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: verifiedDocs[viewingDoc.label] ? '#16a34a' : '#d97706' }} />
+                      {verifiedDocs[viewingDoc.label] ? 'Verified' : 'Pending Verification'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px', fontSize: '0.75rem', color: '#64748b' }}>
+                    <span><strong style={{ color: '#1e293b' }}>Holder:</strong> {viewingDoc.investorName}</span>
                   </div>
                 </div>
               </div>
-              <div className="kfpl-modal-footer">
+              <div className="kfpl-modal-footer" style={{ borderTop: '1px solid #e2e8f0', padding: '12px 20px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
+                  type="button"
                   className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm"
                   onClick={() => setViewingDoc(null)}
                 >Close</button>
                 <button
+                  type="button"
                   className="kfpl-btn kfpl-btn--primary kfpl-btn--sm"
+                  style={{ fontWeight: 700, padding: '6px 16px', borderRadius: '8px', fontSize: '0.8rem' }}
                   onClick={() => {
-                    const blob = new Blob([`Dummy file content for ${viewingDoc.label} of ${viewingDoc.investorName}`], { type: 'text/plain' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = viewingDoc.filename;
-                    link.click();
-                    URL.revokeObjectURL(url);
-                    addToast(`${viewingDoc.label} downloaded`, 'success', 'Downloaded');
+                    downloadFile(viewingDoc.url, viewingDoc.filename);
                     setViewingDoc(null);
                   }}
-                >Download Original File</button>
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="12" height="12"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                    Download Original
+                  </span>
+                </button>
               </div>
             </div>
           </div>,
@@ -1341,4 +1570,23 @@ export default function ClientDetail() {
       </div>
     </ErrorBoundary>
   );
+  } catch (err) {
+    console.error("Agent ClientDetail Crash details:", err);
+    return (
+      <div style={{ padding: '40px', background: '#FFF5F5', color: '#C53030', fontFamily: 'sans-serif', margin: '20px', borderRadius: '12px', border: '1px solid #FEB2B2' }}>
+        <h3 style={{ margin: '0 0 10px 0', color: '#E53E3E' }}>⚠️ Render / Normalization Crash</h3>
+        <p style={{ fontWeight: 'bold', color: '#2D3748' }}>{err.toString()}</p>
+        <pre style={{ background: '#F7FAFC', padding: '12px', borderRadius: '6px', overflowX: 'auto', fontSize: '0.85rem', border: '1px solid #E2E8F0', color: '#4A5568' }}>
+          {err.stack}
+        </pre>
+        <button 
+          className="kfpl-btn kfpl-btn--secondary mt-4" 
+          onClick={() => { localStorage.removeItem(`kfpl_agent_client_detail_${id}`); window.location.reload(); }}
+          style={{ background: '#4A5568', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+        >
+          Clear Cache & Retry
+        </button>
+      </div>
+    );
+  }
 }
