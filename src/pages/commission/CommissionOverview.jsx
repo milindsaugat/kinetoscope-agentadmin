@@ -153,14 +153,7 @@ function downloadStatementPDF(com, agentName, agentClients = []) {
   `);
   printWindow.document.close();
 }
-import { 
-  formatCurrency, 
-  monthlyChartData,
-  oneTimeCommission as mockOneTime,
-  monthlyCommission as mockMonthly,
-  specialCommission as mockSpecial,
-  dashboardStats
-} from '../../data/mockData';
+import { formatCurrency } from '../../utils/formatters';
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 

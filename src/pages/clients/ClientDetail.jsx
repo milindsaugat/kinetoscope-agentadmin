@@ -8,7 +8,7 @@ import { useState, useEffect, Component } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import Badge from '../../components/ui/Badge';
-import { formatCurrency } from '../../data/mockData';
+import { formatCurrency } from '../../utils/formatters';
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 import { getApiUrl } from '../../config/apiUrl';
@@ -67,6 +67,52 @@ class ErrorBoundary extends Component {
 }
 
 /* ── helpers for downloading statements ─────────────────────── */
+/* Description Formatter for Multi-line / Bullet Point Texts */
+const renderFormattedDescription = (desc) => {
+  if (!desc) return null;
+  const lines = desc.split('\n').map(l => l.trim()).filter(Boolean);
+
+  if (lines.length === 1 && !lines[0].endsWith(':') && !lines[0].includes('•')) {
+    return (
+      <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', display: 'block', marginTop: '3px', lineHeight: 1.4 }}>
+        {desc}
+      </span>
+    );
+  }
+
+  return (
+    <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', marginTop: '4px', lineHeight: 1.5 }}>
+      {lines.map((line, idx) => {
+        const isHeader = line.endsWith(':') || line.toLowerCase().includes('points:') || line.toLowerCase().includes('includes:');
+        if (isHeader) {
+          return (
+            <div key={idx} style={{ fontWeight: 700, color: 'var(--color-navy)', marginTop: idx > 0 ? '8px' : '3px', marginBottom: '4px', fontSize: '0.825rem' }}>
+              {line}
+            </div>
+          );
+        }
+
+        const isFirstIntro = idx === 0 && !line.startsWith('•') && !line.startsWith('-') && !line.startsWith('*') && !/^\d+\./.test(line);
+        if (isFirstIntro) {
+          return (
+            <div key={idx} style={{ color: 'var(--color-text-muted)', fontSize: '0.8125rem', marginBottom: '6px', lineHeight: 1.4 }}>
+              {line}
+            </div>
+          );
+        }
+
+        const cleanText = line.replace(/^[•\-\*\d+\.]+\s*/, '');
+        return (
+          <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginTop: '3px', paddingLeft: '4px' }}>
+            <span style={{ color: '#10B981', fontWeight: 'bold', fontSize: '0.8rem', lineHeight: '1.3' }}>✓</span>
+            <span style={{ color: 'var(--color-text-secondary)', fontSize: '0.8rem', lineHeight: 1.35 }}>{cleanText}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 function downloadClientROISingleCSV(roi, client) {
   const rows = [
     ['ROI Payout Statement'],
@@ -675,7 +721,7 @@ export default function ClientDetail() {
           }).map(r => ({
             _id: r.id || r._id,
             payoutMonth: r.month || r.period || '—',
-            roiRate: r.roiPercentage || 1.2,
+            roiRate: r.roiPercentage ?? 0,
             amount: Number(r.amount || 0),
             status: r.status || 'pending',
             processedDate: r.paidAt || r.date || '—',
@@ -836,7 +882,7 @@ export default function ClientDetail() {
     kyc: kycStatus,
     riskProfile: saHeader.riskProfile || saProfile.riskProfile || rawClient.riskProfile || 'Conservative',
     totalInvestment: saSummary.totalInvestment || saProfile.totalPortfolioValue || rawClient.totalInvestment || rawClient.investmentAmount || 0,
-    roiPercent: saSummary.monthlyRoi || saProfile.monthlyRoi || saProfile.roiPercentage || rawClient.roiPercent || rawClient.monthlyRoi || rawClient.roiPercentage || rawClient.roi || 1.2,
+    roiPercent: saSummary.monthlyRoi ?? saProfile.monthlyRoi ?? saProfile.roiPercentage ?? rawClient.roiPercent ?? rawClient.monthlyRoi ?? rawClient.roiPercentage ?? rawClient.roi ?? 0,
     activeSegments: saSummary.activeInvestments || 0,
     pan: saProfile.panNumber || saProfile.pan || rawClient.panNumber || rawClient.pan || '—',
     aadhaar: saProfile.aadhaarNumber || saProfile.aadhaar || rawClient.aadhaarNumber || rawClient.aadhaar || '—',
@@ -862,11 +908,11 @@ export default function ClientDetail() {
     else if (client.totalInvestment >= 1500000) category = 'gold';
   }
 
-  // Map risk level statuses
+  // Map risk level statuses (case-insensitive)
   const riskMap = {
-    'Conservative': 'active', // green
-    'Moderate': 'gold',       // gold
-    'Aggressive': 'rejected'   // red
+    conservative: 'conservative',
+    moderate: 'moderate',
+    aggressive: 'aggressive'
   };
 
   // Helper to map perks from tier
@@ -1069,7 +1115,7 @@ export default function ClientDetail() {
               <div className="kfpl-detail-meta" style={{ marginTop: '8px' }}>
                 <Badge status={category}>{category.toUpperCase()} TIER</Badge>
                 <Badge status={client.status === 'active' ? 'active' : 'inactive'}>{(client.status || 'active').toUpperCase()}</Badge>
-                <Badge status={riskMap[client.riskProfile]}>{client.riskProfile} Risk</Badge>
+                <Badge status={riskMap[String(client.riskProfile || '').toLowerCase()] || 'conservative'}>{client.riskProfile} Risk</Badge>
               </div>
             </div>
           </div>
@@ -1094,25 +1140,28 @@ export default function ClientDetail() {
             <span className="kfpl-detail-kpi-summary-label">Monthly ROI %</span>
             <span className="kfpl-detail-kpi-summary-value" style={{ color: '#F59E0B' }}>{client.roiPercent}% Monthly</span>
           </div>
-          <div className="kfpl-detail-kpi-summary-card">
+          <div className="kfpl-detail-kpi-summary-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <span className="kfpl-detail-kpi-summary-label">KYC Verification</span>
-            <span className="kfpl-detail-kpi-summary-value">
-              <Badge status="active">{client.kyc}</Badge>
-            </span>
+            <div style={{ marginTop: '4px' }}>
+              <Badge status={client.kyc === 'VERIFIED' ? 'active' : 'pending'}>
+                {client.kyc === 'VERIFIED' ? 'Verified' : 'Pending'}
+              </Badge>
+            </div>
           </div>
         </div>
 
         {/* Segmented Pill Tab Bar */}
         <div className="kfpl-tabs">
           {tabs.map(tab => (
-            <button
+            <div
               key={tab}
               className={`kfpl-tab ${activeTab === tab ? 'active' : ''}`}
               onClick={() => setActiveTab(tab)}
+              style={{ cursor: 'pointer' }}
             >
               {tabIcons[tab]}
               {tab.toUpperCase()}
-            </button>
+            </div>
           ))}
         </div>
 
@@ -1392,51 +1441,74 @@ export default function ClientDetail() {
           </div>
         )}
 
-        {activeTab === 'perks' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div className="kfpl-page-header" style={{ marginBottom: '4px' }}>
-              <div>
-                <h3 className="kfpl-form-card-title" style={{ margin: 0 }}>Assigned Loyalty Perks</h3>
-                <p className="kfpl-page-subtitle" style={{ margin: '2px 0 0 0' }}>Client benefits based on their {category} recognition tier</p>
-              </div>
-            </div>
+        {activeTab === 'perks' && (() => {
+          const perksList = (() => {
+            if (!statePerksData) return [];
+            if (Array.isArray(statePerksData)) return statePerksData;
+            if (statePerksData.perks && Array.isArray(statePerksData.perks)) return statePerksData.perks;
+            if (statePerksData.data?.perks && Array.isArray(statePerksData.data.perks)) return statePerksData.data.perks;
+            return [];
+          })();
 
-            {perksList.length === 0 ? (
-              <div className="kfpl-detail-info-card">
-                <div className="kfpl-empty" style={{ padding: '40px' }}>
-                  <div className="kfpl-empty-title">No perks assigned</div>
-                  <div className="kfpl-empty-text">Upgrade client recognition tier or assign custom perks.</div>
+          const tierStyles = {
+            silver: { bg: 'rgba(156, 163, 175, 0.12)', color: '#6B7280', border: '#D1D5DB' },
+            gold: { bg: 'rgba(245, 158, 11, 0.1)', color: '#D97706', border: '#FCD34D' },
+            platinum: { bg: 'rgba(75, 85, 99, 0.1)', color: '#4B5563', border: '#CBD5E1' },
+            diamond: { bg: 'rgba(6, 182, 212, 0.1)', color: '#0891B2', border: '#A5F3FC' },
+          };
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div className="kfpl-page-header" style={{ marginBottom: '4px' }}>
+                <div>
+                  <h3 className="kfpl-form-card-title" style={{ margin: 0 }}>Assigned Loyalty Perks</h3>
+                  <p className="kfpl-page-subtitle" style={{ margin: '2px 0 0 0' }}>Client benefits based on their {category || 'current'} recognition tier</p>
                 </div>
               </div>
-            ) : (
-              <div className="kfpl-perks-grid">
-                {perksList.map((perk, i) => {
-                  const perkName = perk.title || perk.name || perk;
-                  const perkDesc = perk.description || perkDetails[perkName]?.desc || 'Assigned platform benefit and VIP privileges.';
-                  const perkIcon = perkDetails[perkName]?.icon || '⭐';
-                  const perkBadge = (perk.badge || client.category || 'silver').toLowerCase();
-                  return (
-                    <div key={i} className="kfpl-perk-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div className="kfpl-perk-tier-stripe" style={{ background: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' }} />
-                      <div className="kfpl-perk-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 20px 0' }}>
-                        <div className="kfpl-perk-icon-wrap" style={{ background: 'var(--color-gold-light)', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}>
-                          <span style={{ fontSize: '1.25rem' }}>{perkIcon}</span>
+
+              {perksList.length === 0 ? (
+                <div className="kfpl-detail-info-card">
+                  <div className="kfpl-empty" style={{ padding: '40px' }}>
+                    <div className="kfpl-empty-title">No perks assigned</div>
+                    <div className="kfpl-empty-text">Upgrade client recognition tier or assign custom perks.</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="kfpl-perks-grid">
+                  {perksList.map((perk, i) => {
+                    const perkName = typeof perk === 'string' ? perk : (perk.title || perk.name || '');
+                    const perkDesc = typeof perk === 'object' ? (perk.description || '') : '';
+                    const perkBadge = (typeof perk === 'object' && perk.tier ? perk.tier : (category || 'silver')).toLowerCase();
+                    const styleConfig = tierStyles[perkBadge] || tierStyles.silver;
+                    return (
+                      <div key={i} className="kfpl-perk-card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div className="kfpl-perk-tier-stripe" style={{ background: styleConfig.color }} />
+                        <div className="kfpl-perk-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 20px 0' }}>
+                          <div className="kfpl-perk-icon-wrap" style={{ background: styleConfig.bg, width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '20px', height: '20px', color: styleConfig.color }}>
+                              <polyline points="20 12 20 22 4 22 4 12"></polyline>
+                              <rect x="2" y="7" width="20" height="5"></rect>
+                              <line x1="12" y1="22" x2="12" y2="7"></line>
+                              <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path>
+                              <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path>
+                            </svg>
+                          </div>
+                          <Badge status={perkBadge}>{perkBadge}</Badge>
                         </div>
-                        <Badge status={perkBadge}>{perkBadge}</Badge>
+                        <div className="kfpl-perk-card-body" style={{ flex: 1, padding: '16px 20px' }}>
+                          <h4 className="kfpl-perk-card-title" style={{ margin: '0 0 8px 0', fontSize: '1rem', fontWeight: 700 }}>{perkName}</h4>
+                          <div className="kfpl-perk-card-desc">
+                            {renderFormattedDescription(perkDesc)}
+                          </div>
+                        </div>
                       </div>
-                      <div className="kfpl-perk-card-body" style={{ flex: 1, padding: '16px 20px' }}>
-                        <h4 className="kfpl-perk-card-title" style={{ margin: '0 0 8px 0', fontSize: '1rem', fontWeight: 700 }}>{perkName}</h4>
-                        <p className="kfpl-perk-card-desc" style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
-                          {perkDesc}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {activeTab === 'documents' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatCurrency } from '../../data/mockData';
+import { formatCurrency } from '../../utils/formatters';
 import DataTable from '../../components/ui/DataTable';
 import Badge from '../../components/ui/Badge';
 import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';

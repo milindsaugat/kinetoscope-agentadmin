@@ -7,10 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  dashboardStats, activityFeed, rewardsList, monthlyChartData,
-  formatCurrency, formatNumber, clientsList, withdrawalHistory,
-} from '../../data/mockData';
+import { formatCurrency, formatNumber } from '../../utils/formatters';
 import KpiCard from '../../components/ui/KpiCard';
 import Badge from '../../components/ui/Badge';
 import DonutChart from '../../components/charts/DonutChart';
@@ -62,6 +59,7 @@ export default function DashboardHome() {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [agentName, setAgentName] = useState('Agent');
+  const [rewardsList, setRewardsList] = useState([]);
 
   useEffect(() => {
     const authData = localStorage.getItem('kfpl_agent_auth');
@@ -97,11 +95,12 @@ export default function DashboardHome() {
 
     const loadDashboardData = async () => {
       try {
-        // Parallelized fetch for all 3 endpoints concurrently
-        const [profRes, dashRes, clientsRes] = await Promise.all([
+        // Parallelized fetch for all 4 endpoints concurrently
+        const [profRes, dashRes, clientsRes, rewardsRes] = await Promise.all([
           apiRequest('/api/agent/profile').catch(() => null),
           apiRequest('/api/agent/dashboard').catch(err => { console.error(err); return null; }),
-          apiRequest('/api/agent/clients').catch(err => { console.error(err); return null; })
+          apiRequest('/api/agent/clients').catch(err => { console.error(err); return null; }),
+          apiRequest('/api/agent/rewards').catch(() => null)
         ]);
 
         let freshName = currentLocalName.split(' ')[0];
@@ -126,9 +125,46 @@ export default function DashboardHome() {
             if (res.clients && Array.isArray(res.clients)) return res.clients;
             return [];
           };
-          resolvedClients = extractClients(clientsRes);
-          setClients(resolvedClients);
+        resolvedClients = extractClients(clientsRes);
+        setClients(resolvedClients);
+      }
+
+      if (rewardsRes) {
+        let list = [];
+        if (rewardsRes.success && rewardsRes.data) {
+          list = Array.isArray(rewardsRes.data) ? rewardsRes.data : (rewardsRes.data.rewards || []);
+        } else if (rewardsRes.rewards && Array.isArray(rewardsRes.rewards)) {
+          list = rewardsRes.rewards;
+        } else if (Array.isArray(rewardsRes)) {
+          list = rewardsRes;
         }
+
+        const clientCount = resolvedClients.length;
+        const totalVolume = resolvedClients.reduce((sum, c) => sum + (c.totalInvestment || c.investmentAmount || 0), 0);
+
+        const mappedRewards = list.map(r => {
+          const isClientsMetric = r.targetMetricType === 'Clients Count';
+          const currentValue = isClientsMetric ? clientCount : totalVolume;
+          const targetValue = parseFloat(r.targetThresholdValue) || 1;
+          const isUnlocked = currentValue >= targetValue;
+
+          return {
+            ...r,
+            id: r._id || r.id,
+            title: r.targetMilestoneDescription || r.title || 'Milestone Reward',
+            description: r.rewardDescription || r.description || '',
+            targetValue: targetValue,
+            currentValue: currentValue,
+            targetMetricType: r.targetMetricType || 'Milestone',
+            targetLabel: isClientsMetric ? `${r.targetThresholdValue} Clients` : `₹${parseFloat(r.targetThresholdValue || 0).toLocaleString('en-IN')}`,
+            imageUrl: r.rewardImage || r.imageUrl || '',
+            videoUrl: r.rewardVideo || r.videoUrl || '',
+            status: r.status || (isUnlocked ? 'unlocked' : 'locked')
+          };
+        });
+
+        setRewardsList(mappedRewards);
+      }
 
         const totalInv = resolvedClients.reduce((sum, c) => sum + (c.totalInvestment || c.investmentAmount || 0), 0);
         const dynamicCommissionPaid = totalInv * 0.02;
@@ -181,6 +217,22 @@ export default function DashboardHome() {
       }
     };
     loadDashboardData();
+
+    const handleApprovalEvent = (e) => {
+      if (!e || e.key === 'kfpl_approval_event' || e.type === 'kfpl_approval_event') {
+        loadDashboardData();
+      }
+    };
+
+    window.addEventListener('storage', handleApprovalEvent);
+    window.addEventListener('kfpl_approval_event', handleApprovalEvent);
+
+    const pollInterval = setInterval(loadDashboardData, 8000);
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('storage', handleApprovalEvent);
+      window.removeEventListener('kfpl_approval_event', handleApprovalEvent);
+    };
   }, []);
 
   // 1. Calculate Client Investment Distribution (Donut Chart 1)
@@ -210,8 +262,8 @@ export default function DashboardHome() {
     });
   }
 
-  // For Line Chart Trend (fallback to monthly chart if there is real commission or empty)
-  const lineChartData = stats.thisMonthCommission > 0 ? monthlyChartData : [];
+  // For Line Chart Trend
+  const lineChartData = [];
 
   const clientOnboardingTrend = [...clients]
     .sort((a, b) => new Date(a.dateOfJoining || a.createdAt) - new Date(b.dateOfJoining || b.createdAt))
@@ -332,39 +384,122 @@ export default function DashboardHome() {
       </div>
 
       {/* ═══════════════ ACTIVE REWARDS STRIP ═══════════════ */}
-      <div className="kfpl-rewards-section">
-        <div className="kfpl-section-header">
-          <h3 className="kfpl-section-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            Active Rewards
-          </h3>
-          <button className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm" onClick={() => navigate('/rewards')}>
-            View All
+      <div className="kfpl-rewards-section" style={{ marginBottom: '32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '10px',
+              background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%)',
+              border: '1px solid rgba(212, 175, 55, 0.35)', color: '#D97706',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(212, 175, 55, 0.15)'
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--color-navy)', margin: 0, letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                Active Rewards
+                <span style={{ fontSize: '0.68rem', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--color-primary-green)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', border: '1px solid rgba(16, 185, 129, 0.25)', textTransform: 'uppercase' }}>
+                  Milestones
+                </span>
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>Achieve targets to unlock exclusive bonuses</p>
+            </div>
+          </div>
+          <button className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm" onClick={() => navigate('/rewards')} style={{ fontWeight: '600' }}>
+            View All →
           </button>
         </div>
-        <div className="kfpl-rewards-strip">
-          {rewardsList.filter(r => r.status !== 'claimed').slice(0, 5).map(reward => {
-            const isLocked = reward.status === 'locked';
-            const progress = Math.min((reward.currentValue / reward.targetValue) * 100, 100);
-            return (
-              <div
-                key={reward.id}
-                className={`kfpl-reward-card kfpl-rewards-strip-card ${isLocked ? 'kfpl-reward-card--locked' : 'kfpl-reward-card--unlocked'}`}
-                onClick={() => !isLocked && navigate('/rewards')}
-              >
-                {!isLocked && <div className="kfpl-reward-card-ribbon">Claim Now</div>}
-                <div className="kfpl-reward-card-icon">
-                  {rewardIcons[reward.icon] || rewardIcons.star}
+
+        <div style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '12px', scrollbarWidth: 'thin' }}>
+          {rewardsList.length === 0 ? (
+            <div style={{ padding: '24px', background: '#FFFFFF', borderRadius: '16px', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: '0.875rem', width: '100%', textAlign: 'center' }}>
+              No active rewards currently available.
+            </div>
+          ) : (
+            rewardsList.filter(r => r.status !== 'claimed').slice(0, 6).map(reward => {
+              const isLocked = reward.status === 'locked';
+              const progress = Math.min(((reward.currentValue || 0) / (reward.targetValue || 1)) * 100, 100);
+              return (
+                <div
+                  key={reward.id || reward._id}
+                  onClick={() => navigate('/rewards')}
+                  style={{
+                    width: '280px',
+                    flexShrink: 0,
+                    background: '#ffffff',
+                    borderRadius: '16px',
+                    border: '1px solid var(--color-border)',
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    cursor: 'pointer',
+                    transition: 'all 0.25s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 12px 28px rgba(0,0,0,0.08)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.04)';
+                  }}
+                >
+                  {/* Media Banner */}
+                  <div style={{ height: '130px', position: 'relative', overflow: 'hidden', background: 'linear-gradient(135deg, #0A2E26 0%, #031F1A 100%)' }}>
+                    {reward.imageUrl ? (
+                      <img src={reward.imageUrl} alt={reward.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FBBF24', opacity: 0.8 }}>
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                      </div>
+                    )}
+
+                    {/* Metric Chip */}
+                    <div style={{ position: 'absolute', top: '10px', left: '10px' }}>
+                      <span style={{ fontSize: '0.62rem', fontWeight: 800, padding: '3px 8px', borderRadius: '12px', background: 'rgba(10, 46, 38, 0.85)', color: '#FBBF24', backdropFilter: 'blur(4px)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {reward.targetMetricType || 'Milestone'}
+                      </span>
+                    </div>
+
+                    {/* Status Badge */}
+                    <div style={{ position: 'absolute', top: '10px', right: '10px' }}>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 800, padding: '4px 10px', borderRadius: '12px',
+                        background: isLocked ? 'rgba(100, 116, 139, 0.85)' : 'linear-gradient(135deg, #059669, #10B981)',
+                        color: '#ffffff', boxShadow: isLocked ? 'none' : '0 2px 8px rgba(16,185,129,0.4)',
+                        textTransform: 'uppercase'
+                      }}>
+                        {isLocked ? 'Locked' : 'Claim Now'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '0.95rem', fontWeight: 800, color: 'var(--color-navy)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {reward.title}
+                    </h4>
+                    <p style={{ margin: '0 0 14px 0', fontSize: '0.78rem', color: 'var(--color-text-muted)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.35', minHeight: '32px' }}>
+                      {reward.description}
+                    </p>
+
+                    {/* Progress Bar & Label */}
+                    <div style={{ marginTop: 'auto' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-navy)', marginBottom: '5px' }}>
+                        <span>{reward.currentValue || 0} / {reward.targetValue || 1}</span>
+                        <span style={{ color: 'var(--color-primary-green)' }}>{Math.round(progress)}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '6px', background: '#E2E8F0', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, #10B981, #059669)', borderRadius: '10px' }} />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="kfpl-reward-card-title">{reward.title}</div>
-                <div className="kfpl-reward-card-desc">{reward.description}</div>
-                <div className="kfpl-reward-card-target">{reward.targetLabel}</div>
-                <div className="kfpl-reward-card-progress">
-                  <div className="kfpl-reward-card-progress-bar" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -560,21 +695,27 @@ export default function DashboardHome() {
             <button className="kfpl-btn kfpl-btn--ghost kfpl-btn--sm" onClick={() => navigate('/rewards')}>View All</button>
           </div>
           <div className="kfpl-chart-body">
-            <div className="kfpl-widget-list">
-              {rewardsList.slice(0, 5).map((reward, i) => (
-                <div className="kfpl-widget-item" key={reward.id}>
-                  <div className="kfpl-widget-item-info">
-                    <div className="kfpl-widget-item-name">{reward.title}</div>
-                    <div className="kfpl-widget-item-sub">{reward.description}</div>
+            {rewardsList.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
+                No reward milestones configured.
+              </div>
+            ) : (
+              <div className="kfpl-widget-list">
+                {rewardsList.slice(0, 5).map((reward, i) => (
+                  <div className="kfpl-widget-item" key={reward.id || reward._id || i}>
+                    <div className="kfpl-widget-item-info">
+                      <div className="kfpl-widget-item-name">{reward.title}</div>
+                      <div className="kfpl-widget-item-sub">{reward.description}</div>
+                    </div>
+                    <div className="kfpl-widget-item-value" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {reward.status === 'claimed' && <Badge status="active">Claimed</Badge>}
+                      {reward.status === 'unlocked' && <Badge status="gold">Unlocked</Badge>}
+                      {reward.status === 'locked' && <Badge status="inactive">Locked</Badge>}
+                    </div>
                   </div>
-                  <div className="kfpl-widget-item-value" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {reward.status === 'claimed' && <Badge status="active">Claimed</Badge>}
-                    {reward.status === 'unlocked' && <Badge status="gold">Unlocked</Badge>}
-                    {reward.status === 'locked' && <Badge status="inactive">Locked</Badge>}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

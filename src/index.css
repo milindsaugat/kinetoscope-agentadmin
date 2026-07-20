@@ -404,4 +404,37 @@ h4 { font-size: 1rem; font-weight: 600; }
   background: #94a3b8;
 }
 
+/* ── Form Inputs & Textareas ── */
+.kfpl-input, .kfpl-form-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid #CBD5E1 !important;
+  border-radius: 10px !important;
+  font-size: 0.875rem;
+  color: var(--color-navy, #0F172A);
+  background: #FFFFFF !important;
+  outline: none !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+
+.kfpl-input::placeholder, .kfpl-form-input::placeholder {
+  color: #94A3B8 !important;
+}
+
+.kfpl-input:focus, .kfpl-form-input:focus {
+  border-color: #10B981 !important;
+  box-shadow: 0 0 0 3.5px rgba(16, 185, 129, 0.15) !important;
+}
+
+/* Hide number input spinners and prevent accidental wheel scroll increments */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+input[type=number] {
+  -moz-appearance: textfield !important;
+}
+
 

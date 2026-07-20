@@ -341,18 +341,23 @@
   white-space: nowrap;
 }
 
-.kfpl-badge--success {
-  background: var(--color-success-bg);
+.kfpl-badge--success,
+.kfpl-badge--active,
+.kfpl-badge--approved,
+.kfpl-badge--paid {
+  background: #D1FAE5;
   color: #065F46;
 }
 
-.kfpl-badge--warning {
-  background: var(--color-warning-bg);
+.kfpl-badge--warning,
+.kfpl-badge--pending {
+  background: #FEF3C7;
   color: #92400E;
 }
 
-.kfpl-badge--danger {
-  background: var(--color-danger-bg);
+.kfpl-badge--danger,
+.kfpl-badge--rejected {
+  background: #FEE2E2;
   color: #991B1B;
 }
 
@@ -361,7 +366,9 @@
   color: #1E40AF;
 }
 
-.kfpl-badge--muted {
+.kfpl-badge--muted,
+.kfpl-badge--inactive,
+.kfpl-badge--suspended {
   background: var(--color-surface-alt);
   color: var(--color-text-muted);
 }
@@ -369,6 +376,41 @@
 .kfpl-badge--emerald {
   background: var(--color-gold-light);
   color: var(--color-gold-dark);
+}
+
+.kfpl-badge--silver {
+  background: linear-gradient(135deg, #E8E8E8, #C0C0C0);
+  color: #555;
+}
+
+.kfpl-badge--gold {
+  background: linear-gradient(135deg, #FEF3C7, #F59E0B);
+  color: #92400E;
+}
+
+.kfpl-badge--platinum {
+  background: linear-gradient(135deg, #E5E8EB, #B8C5D1);
+  color: #2C3E50;
+}
+
+.kfpl-badge--diamond {
+  background: linear-gradient(135deg, #E0F7FA, #80DEEA);
+  color: #00695C;
+}
+
+.kfpl-badge--conservative {
+  background: rgba(16, 185, 129, 0.1);
+  color: #065F46;
+}
+
+.kfpl-badge--moderate {
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400E;
+}
+
+.kfpl-badge--aggressive {
+  background: rgba(239, 68, 68, 0.1);
+  color: #991B1B;
 }
 
 /* ── Buttons ─────────────────────── */

@@ -4,7 +4,7 @@
    ============================================================ */
 
 import { useState, useEffect } from 'react';
-import { formatCurrency } from '../../data/mockData';
+import { formatCurrency } from '../../utils/formatters';
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 

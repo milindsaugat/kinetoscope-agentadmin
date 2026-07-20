@@ -5,7 +5,6 @@
    ============================================================ */
 
 import { useState, useEffect } from 'react';
-import { rewardsList, rewardsHistory } from '../../data/mockData';
 import { useToast } from '../../components/ui/Toast';
 import { apiRequest, getAgentCacheKey } from '../../config/apiHelper';
 
@@ -104,15 +103,15 @@ export default function RewardsAndRedemption() {
         };
       });
 
-      let finalRewards = rewardsList;
-      let finalHistory = rewardsHistory;
+      let finalRewards = [];
+      let finalHistory = [];
 
       if (mapped.length === 0) {
-        setRewards(rewardsList);
-        setHistory(rewardsHistory);
+        setRewards([]);
+        setHistory([]);
       } else {
         finalRewards = mapped;
-        finalHistory = hist.length > 0 ? hist : rewardsHistory;
+        finalHistory = hist;
         setRewards(finalRewards);
         setHistory(finalHistory);
       }
@@ -126,8 +125,8 @@ export default function RewardsAndRedemption() {
 
     } catch (err) {
       console.error('Failed to load rewards:', err);
-      setRewards(rewardsList);
-      setHistory(rewardsHistory);
+      setRewards([]);
+      setHistory([]);
     } finally {
       setLoading(false);
     }

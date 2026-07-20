@@ -31,6 +31,7 @@ export default function ServiceRequests() {
   });
   
   const [attachment, setAttachment] = useState(null);
+  const [customTopic, setCustomTopic] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [seqMap, setSeqMap] = useState({});
   const fileInputRef = useRef(null);
@@ -112,12 +113,17 @@ export default function ServiceRequests() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!newRequest.category || !newRequest.subject || !newRequest.description) return;
+    if (newRequest.category === 'Other' && !customTopic.trim()) {
+      addToast('Please specify your custom issue topic.', 'danger', 'Custom Topic Required');
+      return;
+    }
 
     try {
       setSubmitting(true);
       const formData = new FormData();
       formData.append('category', newRequest.category);
-      formData.append('subject', newRequest.subject);
+      const finalSubject = newRequest.category === 'Other' && customTopic ? `[${customTopic.trim()}] ${newRequest.subject}` : newRequest.subject;
+      formData.append('subject', finalSubject);
       formData.append('description', newRequest.description);
       if (attachment) {
         formData.append('attachment', attachment);
@@ -639,6 +645,22 @@ export default function ServiceRequests() {
                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
+
+                {newRequest.category === 'Other' && (
+                  <div className="kfpl-form-group">
+                    <label className="kfpl-form-label" style={{ fontWeight: 600, color: 'var(--color-navy)', fontSize: '0.85rem' }}>Specify Your Issue / Topic <span className="required" style={{ color: '#ef4444' }}>*</span></label>
+                    <input 
+                      type="text"
+                      className="kfpl-form-input" 
+                      placeholder="Describe your custom issue topic..." 
+                      value={customTopic} 
+                      onChange={e => setCustomTopic(e.target.value)} 
+                      required 
+                      disabled={submitting}
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--color-border)', outline: 'none', fontSize: '0.9rem', background: '#F8FAFC' }}
+                    />
+                  </div>
+                )}
 
                 <div className="kfpl-form-group">
                   <label className="kfpl-form-label" style={{ fontWeight: 600, color: 'var(--color-navy)', fontSize: '0.85rem' }}>Subject <span className="required" style={{ color: '#ef4444' }}>*</span></label>
