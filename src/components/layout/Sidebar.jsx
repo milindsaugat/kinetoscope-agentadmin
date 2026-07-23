@@ -36,6 +36,11 @@ const icons = {
       <circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>
     </svg>
   ),
+  newsMedia: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+    </svg>
+  ),
   grow: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
@@ -92,7 +97,6 @@ const navSections = [
   {
     title: 'Finance',
     items: [
-      { path: '/grow', icon: 'grow', label: 'Grow with Kinetoscope' },
       { path: '/withdrawal', icon: 'withdrawal', label: 'Withdrawal' },
     ],
   },
@@ -102,6 +106,12 @@ const navSections = [
       { path: '/service-requests', icon: 'serviceRequests', label: 'Service Requests' },
       { path: '/faq', icon: 'support', label: 'FAQ' },
       { path: '/support', icon: 'support', label: 'Support' },
+    ],
+  },
+  {
+    title: 'Others',
+    items: [
+      { path: '/grow', icon: 'newsMedia', label: 'Media & News' },
       { path: '/settings', icon: 'settings', label: 'Settings' },
     ],
   },

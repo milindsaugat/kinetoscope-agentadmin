@@ -46,22 +46,28 @@ export default function Settings() {
         ]);
 
         let email = '';
+        let is2FA = false;
         if (meRes) {
           const user = meRes.agent || meRes.user || meRes.data || meRes;
           email = user.email || meRes.data?.user?.email || '';
+          if (typeof user.is2FAEnabled === 'boolean') is2FA = user.is2FAEnabled;
         }
         if (!email && profRes) {
           const prof = profRes.data || profRes.profile || profRes;
           email = prof.email || '';
+          if (typeof prof.is2FAEnabled === 'boolean') is2FA = prof.is2FAEnabled;
         }
         if (!email) {
           try {
             const stored = JSON.parse(localStorage.getItem('kfpl_agent_auth') || '{}');
             const agentObj = stored.agent || stored.user || stored;
             email = agentObj.email || '';
+            if (typeof agentObj.is2FAEnabled === 'boolean') is2FA = agentObj.is2FAEnabled;
           } catch { /* ignore */ }
         }
         setEmailVal(email);
+        setTfaEnabled(is2FA);
+        localStorage.setItem('kfpl_agent_2fa_enabled', is2FA ? 'true' : 'false');
       } catch (err) {
         console.error('Failed to load session:', err);
       } finally {
@@ -71,12 +77,24 @@ export default function Settings() {
     fetchSession();
   }, []);
 
-  const handleTfaToggle = (e) => {
+  const handleTfaToggle = async (e) => {
     const checked = e.target.checked;
     setTfaEnabled(checked);
     localStorage.setItem('kfpl_agent_2fa_enabled', checked ? 'true' : 'false');
-    toast(`Two-Factor Authentication ${checked ? 'Enabled' : 'Disabled'} successfully.`, 'success');
+
+    try {
+      await apiRequest('/api/agent/profile/2fa', {
+        method: 'PATCH',
+        body: JSON.stringify({ is2FAEnabled: checked }),
+      });
+      toast(`Two-Factor Authentication ${checked ? 'Enabled' : 'Disabled'} successfully.`, 'success');
+    } catch (err) {
+      setTfaEnabled(!checked);
+      localStorage.setItem('kfpl_agent_2fa_enabled', !checked ? 'true' : 'false');
+      toast(err.message || 'Failed to update 2FA settings on server.', 'error');
+    }
   };
+
 
   const handleSendPasswordOtp = async (e) => {
     e.preventDefault();
@@ -154,47 +172,7 @@ export default function Settings() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
         {/* Left Column: 2FA & Registered Email */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* 2FA Card */}
-          <div className="kfpl-card" style={{ padding: '24px', background: '#FFFFFF', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.05rem', fontWeight: 800, color: 'var(--color-navy)', paddingBottom: '12px', borderBottom: '2px solid var(--color-primary-green)' }}>
-              Two-Factor Authentication
-            </h3>
-            <div style={{ background: 'var(--color-surface-elevated, #F8FAFC)', padding: '16px', borderRadius: '12px', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-navy)', marginBottom: '2px' }}>Secure Login with 2FA</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', lineHeight: '1.35' }}>
-                  Require a verification OTP sent to your email whenever you sign in.
-                </div>
-              </div>
-              <label className="kfpl-switch" style={{ position: 'relative', display: 'inline-block', width: 46, height: 24, flexShrink: 0 }}>
-                <input
-                  type="checkbox"
-                  checked={tfaEnabled}
-                  onChange={handleTfaToggle}
-                  style={{ opacity: 0, width: 0, height: 0 }}
-                />
-                <span className="kfpl-switch-slider" style={{
-                  position: 'absolute',
-                  cursor: 'pointer',
-                  inset: 0,
-                  backgroundColor: tfaEnabled ? 'var(--color-primary-green)' : '#CBD5E1',
-                  transition: '.3s',
-                  borderRadius: 24
-                }}>
-                  <span style={{
-                    position: 'absolute',
-                    height: 18,
-                    width: 18,
-                    left: tfaEnabled ? 24 : 3,
-                    bottom: 3,
-                    backgroundColor: 'white',
-                    transition: '.3s',
-                    borderRadius: '50%'
-                  }} />
-                </span>
-              </label>
-            </div>
-          </div>
+
 
           {/* Registered Email Card */}
           <div className="kfpl-card" style={{ padding: '24px', background: '#FFFFFF', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>

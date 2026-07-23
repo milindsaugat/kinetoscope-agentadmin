@@ -85,7 +85,7 @@ export default function MediaFeed() {
     <div className="kfpl-page">
       <div className="kfpl-page-header">
         <div className="kfpl-page-header-left">
-          <h1 className="kfpl-page-title">Grow with Kinetoscope</h1>
+          <h1 className="kfpl-page-title">Media & News</h1>
           <p className="kfpl-page-subtitle">Latest updates from Kinetoscope and the entertainment industry</p>
         </div>
       </div>
