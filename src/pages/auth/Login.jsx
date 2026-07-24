@@ -41,6 +41,9 @@ export default function Login() {
   const [mockOtp, setMockOtp] = useState('');
   const [tempAuthData, setTempAuthData] = useState(null);
 
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
+
   // Agreement Modal states
   const [showAgreementModal, setShowAgreementModal] = useState(false);
   const [agreementStep, setAgreementStep] = useState('agreement'); // 'agreement' | 'privacy' | 'tnc'
@@ -136,11 +139,13 @@ export default function Login() {
         setMockOtp(response.otpCode || '');
         setTempAuthData(response);
         setStep('otp');
-        addToast(`Mock 2FA Code sent: ${response.otpCode}`, 'info', '2FA Verification');
+        addToast('Verification code sent to your registered email address.', 'info', '2FA Verification');
       } else {
+        const agentObj = response.data?.user || response.agent || response.user || response.profile || { email, name: response.fullName || 'Agent' };
         localStorage.setItem('kfpl_agent_auth', JSON.stringify({
           token: response.token,
-          agent: response.agent || response.user || response.profile || { email, name: response.fullName || 'Agent' },
+          agent: agentObj,
+          user: agentObj,
         }));
         window.location.href = '/dashboard';
       }
@@ -264,11 +269,22 @@ export default function Login() {
         body: formData,
       });
 
-      syncLocalAgent(res.data?.code || res.code);
-      addToast('Registration successful! You can now log in.', 'success', 'Account Created');
-      setActiveTab('login');
-      setEmail(regForm.email);
-      setStep('credentials');
+      const localAgentObj = syncLocalAgent(res.data?.code || res.code);
+      const token = res.token || res.data?.token || 'mock-jwt-agent-token-12345';
+      const agentPayload = res.agent || res.data?.agent || res.data?.profile || localAgentObj || {
+        email: regForm.email,
+        name: regForm.name
+      };
+      localStorage.setItem('kfpl_agent_auth', JSON.stringify({
+        token,
+        agent: {
+          ...agentPayload,
+          name: agentPayload.fullName || agentPayload.name || regForm.name || 'Agent',
+          email: regForm.email
+        }
+      }));
+      addToast('Account created successfully! Welcome to Kinetoscope Agent Portal.', 'success', 'Account Created');
+      window.location.href = '/dashboard';
     } catch (err) {
       console.error(err);
       setError(err.message || 'Registration failed. Please check your inputs.');
@@ -525,7 +541,7 @@ export default function Login() {
 
 
                   {/* Nominee Details */}
-                  <div className="kfpl-login-section-label">Nominee Details</div>
+                  <div className="kfpl-login-section-label">Nominee Details (Optional)</div>
                   <div className="kfpl-login-form-row">
                     <div className="kfpl-login-input-group">
                       <label className="kfpl-login-label">Nominee Name</label>
@@ -569,7 +585,7 @@ export default function Login() {
                     <input type="file" className="kfpl-login-input" onChange={(e) => setBankProofDocFile(e.target.files[0])} />
                   </div>
                   <div className="kfpl-login-input-group">
-                    <label className="kfpl-login-label">Nominee Proof Document</label>
+                    <label className="kfpl-login-label">Nominee Proof Document (Optional)</label>
                     <input type="file" className="kfpl-login-input" onChange={(e) => setNomineeProofDocFile(e.target.files[0])} />
                   </div>
 
@@ -579,11 +595,63 @@ export default function Login() {
                   <div className="kfpl-login-form-row">
                     <div className="kfpl-login-input-group">
                       <label className="kfpl-login-label">Password *</label>
-                      <input type="password" name="password" className="kfpl-login-input" placeholder="Enter your password" value={regForm.password} onChange={handleRegisterChange} required />
+                      <div className="kfpl-login-password-wrap">
+                        <input
+                          type={showRegPassword ? 'text' : 'password'}
+                          name="password"
+                          className="kfpl-login-input"
+                          placeholder="Enter your password"
+                          value={regForm.password}
+                          onChange={handleRegisterChange}
+                          required
+                        />
+                        <button
+                          type="button"
+                          className="kfpl-login-password-toggle"
+                          onClick={() => setShowRegPassword(!showRegPassword)}
+                        >
+                          {showRegPassword ? (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                              <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <div className="kfpl-login-input-group">
                       <label className="kfpl-login-label">Confirm Password *</label>
-                      <input type="password" name="confirmPassword" className="kfpl-login-input" placeholder="Confirm your password" value={regForm.confirmPassword} onChange={handleRegisterChange} required />
+                      <div className="kfpl-login-password-wrap">
+                        <input
+                          type={showRegConfirmPassword ? 'text' : 'password'}
+                          name="confirmPassword"
+                          className="kfpl-login-input"
+                          placeholder="Confirm your password"
+                          value={regForm.confirmPassword}
+                          onChange={handleRegisterChange}
+                          required
+                        />
+                        <button
+                          type="button"
+                          className="kfpl-login-password-toggle"
+                          onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                        >
+                          {showRegConfirmPassword ? (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                              <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -655,14 +723,22 @@ export default function Login() {
                   </svg>
                 </div>
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', marginBottom: '6px' }}>Two-Factor Authentication</h2>
-                <p style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4 }}>
-                  We sent a verification code to your email.<br />Please enter the 6-digit code below.
+                <p style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.5)', lineHeight: 1.4, marginBottom: '12px' }}>
+                  We sent a 6-digit verification code to your registered email.<br />Please enter the code below.
                 </p>
-                {mockOtp && (
-                  <div className="kfpl-login-mock-otp">
-                    <span>Mock OTP sent: {mockOtp}</span>
-                  </div>
-                )}
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  color: '#10b981',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  textAlign: 'center',
+                  wordBreak: 'break-all'
+                }}>
+                  <span>OTP sent to your email: <strong>{email}</strong></span>
+                </div>
               </div>
 
               {otpError && (
