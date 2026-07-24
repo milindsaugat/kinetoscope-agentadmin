@@ -55,6 +55,7 @@ export default function DashboardHome() {
     rewardsEarned: 0,
   });
   const [clients, setClients] = useState([]);
+  const [commissions, setCommissions] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +64,6 @@ export default function DashboardHome() {
 
   useEffect(() => {
     const authData = localStorage.getItem('kfpl_agent_auth');
-    let isDemo = false;
     let currentLocalName = 'Agent';
     if (authData) {
       try {
@@ -71,11 +71,7 @@ export default function DashboardHome() {
         const agentObj = parsed.agent || parsed.user || {};
         currentLocalName = agentObj.name || agentObj.fullName || 'Agent';
         setAgentName(currentLocalName.split(' ')[0]);
-        const email = (agentObj.email || parsed.user?.email || '').toLowerCase().trim();
-        isDemo = email === 'rajesh.sharma@mail.com' || email === 'karan.malhotra@mail.com' || email === 'neha.kapoor@mail.com';
-      } catch (e) {
-        // Safe to ignore if JSON.parse fails initially
-      }
+      } catch (e) {}
     }
 
     // --- SWR Cache Initialization for Instant Load (0ms) ---
@@ -86,6 +82,7 @@ export default function DashboardHome() {
         const parsed = JSON.parse(cacheData);
         if (parsed.stats) setStats(parsed.stats);
         if (parsed.clients) setClients(parsed.clients);
+        if (parsed.commissions) setCommissions(parsed.commissions);
         if (parsed.agentName) setAgentName(parsed.agentName);
         setLoading(false);
       }
@@ -95,12 +92,13 @@ export default function DashboardHome() {
 
     const loadDashboardData = async () => {
       try {
-        // Parallelized fetch for all 4 endpoints concurrently
-        const [profRes, dashRes, clientsRes, rewardsRes] = await Promise.all([
+        // Parallelized fetch for all API endpoints concurrently
+        const [profRes, dashRes, clientsRes, rewardsRes, commsRes] = await Promise.all([
           apiRequest('/api/agent/profile').catch(() => null),
           apiRequest('/api/agent/dashboard').catch(err => { console.error(err); return null; }),
           apiRequest('/api/agent/clients').catch(err => { console.error(err); return null; }),
-          apiRequest('/api/agent/rewards').catch(() => null)
+          apiRequest('/api/agent/rewards').catch(() => null),
+          apiRequest('/api/agent/commissions').catch(() => null)
         ]);
 
         let freshName = currentLocalName.split(' ')[0];
@@ -125,60 +123,70 @@ export default function DashboardHome() {
             if (res.clients && Array.isArray(res.clients)) return res.clients;
             return [];
           };
-        resolvedClients = extractClients(clientsRes);
-        setClients(resolvedClients);
-      }
-
-      if (rewardsRes) {
-        let list = [];
-        if (rewardsRes.success && rewardsRes.data) {
-          list = Array.isArray(rewardsRes.data) ? rewardsRes.data : (rewardsRes.data.rewards || []);
-        } else if (rewardsRes.rewards && Array.isArray(rewardsRes.rewards)) {
-          list = rewardsRes.rewards;
-        } else if (Array.isArray(rewardsRes)) {
-          list = rewardsRes;
+          resolvedClients = extractClients(clientsRes);
+          setClients(resolvedClients);
         }
 
-        const clientCount = resolvedClients.length;
-        const totalVolume = resolvedClients.reduce((sum, c) => sum + (c.totalInvestment || c.investmentAmount || 0), 0);
+        const rawComms = Array.isArray(commsRes) ? commsRes : (commsRes?.data?.commissions || commsRes?.commissions || (Array.isArray(commsRes?.data) ? commsRes.data : []));
+        setCommissions(rawComms);
 
-        const mappedRewards = list.map(r => {
-          const isClientsMetric = r.targetMetricType === 'Clients Count';
-          const currentValue = isClientsMetric ? clientCount : totalVolume;
-          const targetValue = parseFloat(r.targetThresholdValue) || 1;
-          const isUnlocked = currentValue >= targetValue;
+        if (rewardsRes) {
+          let list = [];
+          if (rewardsRes.success && rewardsRes.data) {
+            list = Array.isArray(rewardsRes.data) ? rewardsRes.data : (rewardsRes.data.rewards || []);
+          } else if (rewardsRes.rewards && Array.isArray(rewardsRes.rewards)) {
+            list = rewardsRes.rewards;
+          } else if (Array.isArray(rewardsRes)) {
+            list = rewardsRes;
+          }
 
-          return {
-            ...r,
-            id: r._id || r.id,
-            title: r.targetMilestoneDescription || r.title || 'Milestone Reward',
-            description: r.rewardDescription || r.description || '',
-            targetValue: targetValue,
-            currentValue: currentValue,
-            targetMetricType: r.targetMetricType || 'Milestone',
-            targetLabel: isClientsMetric ? `${r.targetThresholdValue} Clients` : `₹${parseFloat(r.targetThresholdValue || 0).toLocaleString('en-IN')}`,
-            imageUrl: r.rewardImage || r.imageUrl || '',
-            videoUrl: r.rewardVideo || r.videoUrl || '',
-            status: r.status || (isUnlocked ? 'unlocked' : 'locked')
-          };
-        });
+          const clientCount = resolvedClients.length;
+          const totalVolume = resolvedClients.reduce((sum, c) => sum + (c.totalInvestment || c.investmentAmount || 0), 0);
 
-        setRewardsList(mappedRewards);
-      }
+          const mappedRewards = list.map(r => {
+            const isClientsMetric = r.targetMetricType === 'Clients Count';
+            const currentValue = isClientsMetric ? clientCount : totalVolume;
+            const targetValue = parseFloat(r.targetThresholdValue) || 1;
+            const isUnlocked = currentValue >= targetValue;
 
-        const totalInv = resolvedClients.reduce((sum, c) => sum + (c.totalInvestment || c.investmentAmount || 0), 0);
-        const dynamicCommissionPaid = totalInv * 0.02;
+            return {
+              ...r,
+              id: r._id || r.id,
+              title: r.targetMilestoneDescription || r.title || 'Milestone Reward',
+              description: r.rewardDescription || r.description || '',
+              targetValue: targetValue,
+              currentValue: currentValue,
+              targetMetricType: r.targetMetricType || 'Milestone',
+              targetLabel: isClientsMetric ? `${r.targetThresholdValue} Clients` : `₹${parseFloat(r.targetThresholdValue || 0).toLocaleString('en-IN')}`,
+              imageUrl: r.rewardImage || r.imageUrl || '',
+              videoUrl: r.rewardVideo || r.videoUrl || '',
+              status: r.status || (isUnlocked ? 'unlocked' : 'locked')
+            };
+          });
+
+          setRewardsList(mappedRewards);
+        }
+
+        const realPaid = rawComms.filter(c => String(c.status || '').toUpperCase() === 'PAID').reduce((sum, c) => sum + Number(c.amount || 0), 0);
+        const realPending = rawComms.filter(c => String(c.status || '').toUpperCase() === 'PENDING').reduce((sum, c) => sum + Number(c.amount || 0), 0);
+
+        const now = new Date();
+        const realThisMonth = rawComms.filter(c => {
+          const d = new Date(c.date || c.createdAt);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        }).reduce((sum, c) => sum + Number(c.amount || 0), 0);
 
         let newStats = {};
         if (dashRes) {
           const data = dashRes.data || dashRes;
           const statsSource = data.stats || data.data?.stats || data.data || data;
+
           newStats = {
-            totalClients: statsSource.totalClients ?? statsSource.clientsCount ?? statsSource.totalInvestors ?? data.totalClients ?? data.clientsCount ?? 0,
-            activeInvestments: statsSource.activeInvestments ?? statsSource.investmentsCount ?? statsSource.activeCount ?? data.activeInvestments ?? data.investmentsCount ?? 0,
-            thisMonthCommission: statsSource.thisMonthCommission ?? statsSource.monthlyCommission ?? statsSource.commissionThisMonth ?? data.thisMonthCommission ?? data.monthlyCommission ?? data.commissionThisMonth ?? 0,
-            commissionPaid: dynamicCommissionPaid,
-            commissionPending: 0,
+            totalClients: statsSource.totalClients ?? statsSource.clientsCount ?? statsSource.totalInvestors ?? data.totalClients ?? data.clientsCount ?? resolvedClients.length,
+            activeInvestments: statsSource.activeInvestments ?? statsSource.investmentsCount ?? statsSource.activeCount ?? data.activeInvestments ?? data.investmentsCount ?? resolvedClients.length,
+            thisMonthCommission: realThisMonth || (statsSource.thisMonthCommission ?? data.thisMonthCommission ?? 0),
+            commissionPaid: realPaid || (statsSource.commissionPaid ?? data.commissionPaid ?? 0),
+            commissionPending: realPending || (statsSource.commissionPending ?? data.commissionPending ?? 0),
             rewardsEarned: statsSource.rewardsEarned ?? statsSource.totalRewards ?? data.rewardsEarned ?? data.totalRewards ?? 0,
           };
           setStats(newStats);
@@ -192,9 +200,9 @@ export default function DashboardHome() {
           newStats = {
             totalClients: resolvedClients.length,
             activeInvestments: resolvedClients.length,
-            thisMonthCommission: 0,
-            commissionPaid: dynamicCommissionPaid,
-            commissionPending: 0,
+            thisMonthCommission: realThisMonth,
+            commissionPaid: realPaid,
+            commissionPending: realPending,
             rewardsEarned: 0,
           };
           setStats(newStats);
@@ -207,6 +215,7 @@ export default function DashboardHome() {
         localStorage.setItem(cacheKey, JSON.stringify({
           stats: newStats,
           clients: resolvedClients,
+          commissions: rawComms,
           agentName: freshName
         }));
 
@@ -262,29 +271,47 @@ export default function DashboardHome() {
     });
   }
 
-  // For Line Chart Trend
-  const lineChartData = [];
+  // Dynamic Line Chart Data for Monthly Commission Trend
+  const lineChartData = commissions.length > 0
+    ? commissions.reduce((acc, c) => {
+        const month = new Date(c.date || c.createdAt || Date.now()).toLocaleDateString('en-IN', { month: 'short' });
+        const existing = acc.find(x => x.month === month);
+        const amt = Number(c.amount || 0);
+        if (existing) {
+          existing.amount += amt;
+        } else {
+          acc.push({ month, amount: amt });
+        }
+        return acc;
+      }, [])
+    : [];
 
-  const clientOnboardingTrend = [...clients]
-    .sort((a, b) => new Date(a.dateOfJoining || a.createdAt) - new Date(b.dateOfJoining || b.createdAt))
-    .reduce((acc, client) => {
-      const joinDate = client.dateOfJoining || client.createdAt;
-      if (!joinDate) return acc;
-      const month = new Date(joinDate).toLocaleDateString('en-IN', { month: 'short' });
-      const previous = acc.length ? acc[acc.length - 1].amount : 0;
-      const existingIndex = acc.findIndex(item => item.month === month);
-      if (existingIndex !== -1) {
-        acc[existingIndex].amount += 1;
-      } else {
-        acc.push({ month, amount: previous + 1 });
-      }
-      return acc;
-    }, []);
+  const currentMonthStr = new Date().toLocaleDateString('en-IN', { month: 'short' });
+  const clientOnboardingTrend = clients.length > 0 
+    ? [...clients]
+        .sort((a, b) => new Date(a.dateOfJoining || a.createdAt || Date.now()) - new Date(b.dateOfJoining || b.createdAt || Date.now()))
+        .reduce((acc, client) => {
+          const joinDate = client.dateOfJoining || client.createdAt;
+          const month = joinDate ? new Date(joinDate).toLocaleDateString('en-IN', { month: 'short' }) : currentMonthStr;
+          const existingIndex = acc.findIndex(item => item.month === month);
+          if (existingIndex !== -1) {
+            acc[existingIndex].amount += 1;
+          } else {
+            const prevAmount = acc.length ? acc[acc.length - 1].amount : 0;
+            acc.push({ month, amount: prevAmount + 1 });
+          }
+          return acc;
+        }, [])
+    : [];
+
+  if (clientOnboardingTrend.length === 1) {
+    clientOnboardingTrend.unshift({ month: 'Jun', amount: 0 });
+  }
 
   const withdrawalTrend = withdrawals.map(item => ({
-    month: new Date(item.date || item.createdAt).toLocaleDateString('en-IN', { month: 'short' }),
-    amount: item.amount,
-    status: item.status,
+    month: new Date(item.date || item.createdAt || Date.now()).toLocaleDateString('en-IN', { month: 'short' }),
+    amount: Number(item.amount || 0),
+    status: item.status || 'Approved',
   }));
 
   // Top Clients list for widgets section
@@ -519,20 +546,9 @@ export default function DashboardHome() {
               No investment data available
             </div>
           ) : (
-            <>
-              <div className="kfpl-chart-body">
-                <DonutChart data={topClientsForDonut} size={190} strokeWidth={26} />
-              </div>
-              <div className="kfpl-chart-legend">
-                {topClientsForDonut.map((cl, i) => (
-                  <div className="kfpl-legend-item" key={cl.segment}>
-                    <span className="kfpl-legend-dot" style={{ background: SEGMENT_COLORS[i % SEGMENT_COLORS.length] }} />
-                    <span>{cl.segment}</span>
-                    <span className="kfpl-legend-value">{cl.value}%</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <div className="kfpl-chart-body" style={{ padding: '12px 0', display: 'flex', justifyContent: 'center' }}>
+              <DonutChart data={topClientsForDonut} size={200} />
+            </div>
           )}
         </div>
 
@@ -541,9 +557,9 @@ export default function DashboardHome() {
           <div className="kfpl-chart-header">
             <div>
               <div className="kfpl-chart-title">Monthly Commission Trend</div>
-              <div className="kfpl-chart-subtitle">Recurring payouts track — FY 25</div>
+              <div className="kfpl-chart-subtitle">Recurring payouts track — FY 26</div>
             </div>
-            <Badge status="gold">FY 2025</Badge>
+            <Badge status="gold">FY 2026</Badge>
           </div>
           {lineChartData.length === 0 ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px', color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>

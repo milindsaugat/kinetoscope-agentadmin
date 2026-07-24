@@ -459,7 +459,7 @@ export default function CommissionOverview() {
           type: 'one-time',
           commissionType: 'One-Time',
           amount: otAmt,
-          status: 'Paid',
+          status: 'Pending',
           clientId: cl.id || cl._id,
           clientName: cl.fullName || cl.name || cl.profile?.fullName || cl.user?.name || '—',
           clientCode: formatClientID(cl.clientCode || cl.clientId || cl.profile?.clientCode || cl.user?.clientCode || ''),
@@ -481,7 +481,7 @@ export default function CommissionOverview() {
             type: 'monthly',
             commissionType: 'Monthly',
             amount: mAmt,
-            status: 'Paid',
+            status: 'Pending',
             clientId: cl.id || cl._id,
             clientName: cl.fullName || cl.name || cl.profile?.fullName || cl.user?.name || '—',
             clientCode: formatClientID(cl.clientCode || cl.clientId || cl.profile?.clientCode || cl.user?.clientCode || ''),
@@ -501,7 +501,7 @@ export default function CommissionOverview() {
           type: 'special',
           commissionType: 'Special',
           amount: spAmt,
-          status: 'Paid',
+          status: 'Pending',
           clientId: cl.id || cl._id,
           clientName: cl.fullName || cl.name || cl.profile?.fullName || cl.user?.name || '—',
           clientCode: formatClientID(cl.clientCode || cl.clientId || cl.profile?.clientCode || cl.user?.clientCode || ''),
@@ -564,9 +564,9 @@ export default function CommissionOverview() {
     ? enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'special') 
     : enrichedCommissions.filter(c => normalizeType(c.type || c.commissionType) === 'special' && c.reason && c.reason !== '—' && c.reason !== '-');
 
-  const totalOneTime = oneTimeCommission.reduce((s, c) => s + (c.amount || c.commissionEarned || 0), 0);
-  const totalMonthly = monthlyCommission.reduce((s, c) => s + (c.amount || 0), 0);
-  const totalSpecial = specialCommission.filter(s => s.status === 'Credited' || s.status === 'credited' || s.status === 'paid').reduce((s, c) => s + (c.amount || 0), 0);
+  const totalOneTime = oneTimeCommission.filter(c => ['paid', 'credited'].includes(String(c.status || '').toLowerCase())).reduce((s, c) => s + (c.amount || c.commissionEarned || 0), 0);
+  const totalMonthly = monthlyCommission.filter(c => ['paid', 'credited'].includes(String(c.status || '').toLowerCase())).reduce((s, c) => s + (c.amount || 0), 0);
+  const totalSpecial = specialCommission.filter(s => ['credited', 'paid'].includes(String(s.status || '').toLowerCase())).reduce((s, c) => s + (c.amount || 0), 0);
   const totalEarned = totalOneTime + totalMonthly + totalSpecial;
 
   const getCommissionBreakdown = (com) => {
